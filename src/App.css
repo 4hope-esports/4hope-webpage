@@ -1,0 +1,133 @@
+.hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 20px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.hero::before,
+.hero::after {
+  content: "";
+  position: fixed;
+  width: 90px;
+  height: 55%;
+  background: rgba(242, 194, 0, 0.2);
+  transform: rotate(-32deg);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero::before {
+  right: 140px;
+  bottom: -5%;
+}
+
+.hero::after {
+  right: 20px;
+  bottom: -10%;
+  width: 80px;
+  background: rgba(242, 194, 0, 0.14);
+}
+
+.hero > * { position: relative; z-index: 1; }
+
+.logo {
+  width: 100px;
+  height: auto;
+  filter: drop-shadow(0 0 32px rgba(242, 194, 0, 0.15));
+}
+
+.tagline {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: clamp(1.75rem, 5vw, 2.75rem);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.tagline .gold { color: var(--gold-500); }
+
+.description {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.72);
+  max-width: 520px;
+}
+
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold-500);
+}
+
+.team-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  max-width: 520px;
+}
+
+.team-info p {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.divider {
+  width: 48px;
+  height: 2px;
+  background: var(--gold-500);
+  border-radius: 1px;
+  opacity: 0.5;
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px 28px;
+  background: var(--gold-500);
+  color: var(--ink-1000);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.cta:hover { background: var(--gold-400); }
+
+.cta svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.footer {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
