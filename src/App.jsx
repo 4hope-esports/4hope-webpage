@@ -28,7 +28,7 @@ function App() {
         <img src={logo} alt="4Hope logo" className="logo" />
 
         <h1 className="tagline">
-          <span className="gold">Four titles.</span><br />One squad.
+          PLAY FOR KEEPS
         </h1>
 
         <div className="divider" />
@@ -36,11 +36,10 @@ function App() {
         <div className="team-info">
           <span className="kicker">// Who we are</span>
           <p>
-            {config?.team?.description ||
-              "We're a competitive gaming organization built on grit, camaraderie, and a little luck. Our squads compete across multiple titles — united by one mission: play for keeps."}
+            {config?.team?.description}
           </p>
           <p>
-            Whether you're a player looking for your next squad, a fan looking to ride along, or a creator looking to build something — you're in the right place.
+            Whether you're looking for a squad to run games with or create content for fun — you're in the right place.
           </p>
         </div>
 
