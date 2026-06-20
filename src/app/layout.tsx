@@ -5,7 +5,19 @@ export const metadata: Metadata = {
   title: '4Hope — Play For Keeps',
   description: "We're a gaming crew built on good vibes, camaraderie, and a little luck.",
   icons: {
-    icon: '/favicon.ico',
+    icon: [
+      {
+        url: '/brand/favicon.svg',
+        type: 'image/svg+xml',
+        media: '(prefers-color-scheme: light)',
+      },
+      {
+        url: '/brand/favicon.svg',
+        type: 'image/svg+xml',
+        media: '(prefers-color-scheme: dark)',
+      },
+      { url: '/brand/favicon.ico', sizes: 'any' },
+    ],
     apple: '/brand/apple-touch-icon.png',
   },
 }
