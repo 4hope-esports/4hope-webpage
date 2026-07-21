@@ -3,25 +3,41 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
 
 const NAV_LINKS = [
-  { label: 'Home', href: '/' },
-  { label: 'Teams', href: '/teams' },
-  { label: 'Matches', href: '/matches' },
-  { label: 'News', href: '/news' },
-  { label: 'Shop', href: '/shop' },
+  { label: 'Home', href: '#home' },
+  { label: 'Teams', href: '#teams' },
+  { label: 'Matches', href: '#matches' },
+  { label: 'News', href: '#news' },
+  { label: 'Shop', href: '#shop' },
 ]
 
 export function Navbar({ discordHref }: { discordHref: string }) {
   const [open, setOpen] = useState(false)
-  const pathname = usePathname()
+  const [activeId, setActiveId] = useState('home')
 
-  // Close the mobile/tablet menu on route change and keep body scroll in sync with it
+  // Highlight the nav link for whichever section is currently in view
   useEffect(() => {
-    setOpen(false)
-  }, [pathname])
+    const sections = NAV_LINKS.map((link) => document.getElementById(link.href.slice(1))).filter(
+      (el): el is HTMLElement => el !== null
+    )
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible[0]) {
+          setActiveId(visible[0].target.id)
+        }
+      },
+      { rootMargin: '-64px 0px -60% 0px', threshold: 0.1 }
+    )
+
+    sections.forEach((section) => observer.observe(section))
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
@@ -33,7 +49,7 @@ export function Navbar({ discordHref }: { discordHref: string }) {
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-ink-1000/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="#home" className="flex items-center gap-2">
           <Image src="/brand/logo.png" alt="4Hope" width={32} height={32} />
           <span className="font-display text-sm font-[900] uppercase tracking-wide">4Hope</span>
         </Link>
@@ -41,7 +57,7 @@ export function Navbar({ discordHref }: { discordHref: string }) {
         {/* Top menu — visible on desktop/laptop only */}
         <nav className="hidden lg:flex items-center gap-8">
           {NAV_LINKS.map((link) => {
-            const active = pathname === link.href
+            const active = activeId === link.href.slice(1)
             return (
               <Link
                 key={link.href}
@@ -87,11 +103,12 @@ export function Navbar({ discordHref }: { discordHref: string }) {
       >
         <div className="flex flex-col gap-1">
           {NAV_LINKS.map((link) => {
-            const active = pathname === link.href
+            const active = activeId === link.href.slice(1)
             return (
               <Link
                 key={link.href}
                 href={link.href}
+                onClick={() => setOpen(false)}
                 className={`rounded-lg px-3 py-3 font-display text-sm font-bold uppercase tracking-wide transition-colors hover:bg-white/5 hover:text-gold-500 ${
                   active ? 'text-gold-500' : 'text-white/80'
                 }`}
