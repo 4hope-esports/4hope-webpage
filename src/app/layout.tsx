@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
+import { Navbar } from '@/components/navbar'
+import { getConfig } from '@/lib/config'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -24,11 +26,13 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const config = await getConfig()
+
   return (
     <html lang="en">
       <head>
@@ -41,6 +45,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#0c0c0d" />
       </head>
       <body>
+        <Navbar discordHref={config.links.discord} />
         {children}
         <Analytics />
         <SpeedInsights />

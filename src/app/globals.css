@@ -11,6 +11,14 @@
   --font-mono: "Roboto Mono", monospace;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   @apply bg-ink-1000 text-white font-body min-h-screen;
+}
+
+section[id] {
+  scroll-margin-top: 4rem;
 }
