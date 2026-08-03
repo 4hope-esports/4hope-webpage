@@ -14,3 +14,13 @@
 body {
   @apply bg-ink-1000 text-white font-body min-h-screen;
 }
+
+:root {
+  --ink-950: #08080a;
+  --ink-900: #111114;
+  --ink-700: #26262a;
+  --ink-1000: #0c0c0d;
+  --gold-500: #f2c200;
+  --family-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "Roboto Mono", monospace;
+}
