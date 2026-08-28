@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 
@@ -13,9 +14,12 @@ interface NavigationProps {
   discordUrl: string
 }
 
+// Hash links are always rooted at "/" (not the current path) so they resolve
+// correctly from any page, not just the home page itself.
 const LINKS: NavLink[] = [
-  { label: 'Home', href: '#home' },
-  { label: 'Roster', href: '#roster' },
+  { label: 'Home', href: '/#home' },
+  { label: 'Roster', href: '/#roster' },
+  { label: 'Tournament Tools', href: '/tournament/leaderboard' },
 ]
 
 function DiscordIcon() {
@@ -27,13 +31,18 @@ function DiscordIcon() {
 }
 
 export function Navigation({ discordUrl }: NavigationProps) {
-  const [active, setActive] = useState('#home')
+  const pathname = usePathname()
+  const [active, setActive] = useState('/#home')
   const [menuOpen, setMenuOpen] = useState(false)
 
+  const onLandingPage = pathname === '/'
+
   useEffect(() => {
-    const sections = LINKS.map((l) => document.getElementById(l.href.slice(1))).filter(
-      (el): el is HTMLElement => el !== null,
-    )
+    if (!onLandingPage) return
+
+    const sections = LINKS.filter((l) => l.href.startsWith('/#'))
+      .map((l) => document.getElementById(l.href.slice(2)))
+      .filter((el): el is HTMLElement => el !== null)
 
     if (sections.length === 0) return
 
@@ -41,7 +50,7 @@ export function Navigation({ discordUrl }: NavigationProps) {
       (entries) => {
         const visible = entries.filter((e) => e.isIntersecting)
         if (visible.length > 0) {
-          setActive(`#${visible[0].target.id}`)
+          setActive(`/#${visible[0].target.id}`)
         }
       },
       { rootMargin: '-64px 0px -85% 0px' },
@@ -49,9 +58,11 @@ export function Navigation({ discordUrl }: NavigationProps) {
 
     sections.forEach((el) => observer.observe(el))
     return () => observer.disconnect()
-  }, [])
+  }, [onLandingPage])
 
-  const isHome = active === '#home'
+  const isActiveLink = (href: string) =>
+    href.startsWith('/#') ? onLandingPage && active === href : pathname === href || pathname.startsWith(`${href}/`)
+  const isHome = onLandingPage && active === '/#home'
 
   const meetTheSquadButton = (
     <a
@@ -86,7 +97,7 @@ export function Navigation({ discordUrl }: NavigationProps) {
 
         <nav className="hidden gap-1 sm:flex">
           {LINKS.map((link) => {
-            const isActive = active === link.href
+            const isActive = isActiveLink(link.href)
             return (
               <a
                 key={link.label}
@@ -119,7 +130,7 @@ export function Navigation({ discordUrl }: NavigationProps) {
       {menuOpen && (
         <div className="flex flex-col gap-1 border-t border-white/10 px-5 py-3 sm:hidden">
           {LINKS.map((link) => {
-            const isActive = active === link.href
+            const isActive = isActiveLink(link.href)
             return (
               <a
                 key={link.label}

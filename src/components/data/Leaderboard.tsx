@@ -30,6 +30,8 @@ export interface LeaderboardProps {
   onNameFilterChange?: (value: string) => void;
   regionFilter?: string;
   onRegionFilterChange?: (value: string) => void;
+  /** Renders all cells/actions inert (no edits, no add/remove) — for a shared view-only link */
+  readOnly?: boolean;
   style?: React.CSSProperties;
 }
 
@@ -85,6 +87,7 @@ export function Leaderboard({
   onNameFilterChange,
   regionFilter,
   onRegionFilterChange,
+  readOnly = false,
   style = {},
 }: LeaderboardProps) {
   const [nameFilterOpen, setNameFilterOpen] = React.useState(false);
@@ -204,7 +207,7 @@ export function Leaderboard({
           {Array.from({ length: roundCount }).map((_, r) => (
             <div key={r} style={{ ...headCell(COLW.round), position: "relative" }}>
               R{r + 1}
-              {onRoundCountChange && (
+              {!readOnly && onRoundCountChange && (
                 <span onClick={() => onRoundCountChange(roundCount - 1)} title="Remove round"
                   style={{ position: "absolute", top: 2, right: 3, cursor: "pointer", color: "rgba(255,255,255,0.25)", fontSize: 10, lineHeight: 1 }}>×</span>
               )}
@@ -233,7 +236,7 @@ export function Leaderboard({
               <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.06)", background: rowBg }}>
                 {/* Rank */}
                 <div style={{ width: COLW.rank, flex: `0 0 ${COLW.rank}px`, padding: "6px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 2, position: "sticky", left: 0, background: rowBg, zIndex: 1 }}>
-                  {rankMode === "manual" && (
+                  {!readOnly && rankMode === "manual" && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                       <span onClick={() => move(pid, -1)} style={{ cursor: "pointer", fontSize: 8, color: "rgba(255,255,255,0.4)", lineHeight: 1 }}>▲</span>
                       <span onClick={() => move(pid, 1)} style={{ cursor: "pointer", fontSize: 8, color: "rgba(255,255,255,0.4)", lineHeight: 1 }}>▼</span>
@@ -244,9 +247,9 @@ export function Leaderboard({
 
                 {/* Name */}
                 <div style={{ width: COLW.name, flex: `0 0 ${COLW.name}px`, padding: "2px 6px", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 6, position: "sticky", left: COLW.rank, background: rowBg, zIndex: 1 }}>
-                  <input value={p.name} onChange={(e) => setPlayer(pid, { name: e.target.value })}
+                  <input value={p.name} readOnly={readOnly} onChange={(e) => setPlayer(pid, { name: e.target.value })}
                     style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "#fff", fontFamily: "var(--family-sans, Inter, sans-serif)", fontWeight: 600, fontSize: 12.5 }} />
-                  {onPlayersChange && (
+                  {!readOnly && onPlayersChange && (
                     <span onClick={() => removePlayer(pid)} title="Remove player"
                       style={{ cursor: "pointer", color: "rgba(255,255,255,0.55)", display: "flex", flex: "none" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#FCA5A5"; }}
@@ -258,7 +261,7 @@ export function Leaderboard({
 
                 {/* Region */}
                 <div style={{ width: COLW.region, flex: `0 0 ${COLW.region}px`, padding: "5px 8px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", position: "sticky", left: COLW.rank + COLW.name, background: rowBg, zIndex: 1 }}>
-                  <input value={p.region || ""} placeholder="—" onChange={(e) => setPlayer(pid, { region: e.target.value.toUpperCase().slice(0, 6) })}
+                  <input value={p.region || ""} placeholder="—" readOnly={readOnly} onChange={(e) => setPlayer(pid, { region: e.target.value.toUpperCase().slice(0, 6) })}
                     style={{ width: "100%", textAlign: "center", background: bg, color: fg, border: "none", outline: "none", borderRadius: 5, fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", padding: "3px 2px" }} />
                 </div>
 
@@ -272,9 +275,9 @@ export function Leaderboard({
                   const val = (scores[pid] || {})[r];
                   return (
                     <div key={r} style={{ width: COLW.round, flex: `0 0 ${COLW.round}px`, boxSizing: "border-box", height: 34, borderRight: "1px solid rgba(255,255,255,0.04)" }}>
-                      <input type="number" value={val == null ? "" : val} placeholder="–"
+                      <input type="number" value={val == null ? "" : val} placeholder="–" readOnly={readOnly}
                         onChange={(e) => setScore(pid, r, e.target.value)}
-                        style={cellInputStyle({ fontWeight: val != null ? 700 : 400 })} />
+                        style={cellInputStyle({ fontWeight: val != null ? 700 : 400, cursor: readOnly ? "default" : "text" })} />
                     </div>
                   );
                 })}
@@ -282,7 +285,7 @@ export function Leaderboard({
                 {/* Prize */}
                 {showPrize && (
                   <div style={{ width: COLW.prize, flex: `0 0 ${COLW.prize}px`, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", position: "sticky", right: 0, background: rowBg, zIndex: 1, borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
-                    {onPrizeTiersChange ? (
+                    {!readOnly && onPrizeTiersChange ? (
                       <input
                         value={prizeTiers[rank - 1] || ""}
                         placeholder="—"
