@@ -71,10 +71,11 @@ function RegisterForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, displayName }),
       })
-      if (!res.ok) throw new Error('Failed to save profile')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to save profile')
       router.push(callbackUrl)
-    } catch {
-      setError('Could not save your profile. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save your profile. Please try again.')
       setStatus('idle')
     }
   }

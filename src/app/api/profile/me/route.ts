@@ -56,13 +56,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid username" }, { status: 400 });
   }
 
-  const docRef = getAdminDb().collection(envCollection("users")).doc(session.user.id);
+  const usersCol = getAdminDb().collection(envCollection("users"));
+  const usernameKey = username.toLowerCase();
+  const dupe = await usersCol.where("usernameKey", "==", usernameKey).limit(1).get();
+  if (!dupe.empty && dupe.docs[0].id !== session.user.id) {
+    return NextResponse.json({ error: "That player name is already taken." }, { status: 409 });
+  }
+
+  const docRef = usersCol.doc(session.user.id);
 
   const defaultBytes = session.user.image ? await fetchAndCompressAvatar(session.user.image) : null;
 
   await docRef.set(
     {
       username,
+      usernameKey,
       displayName: typeof displayName === "string" && displayName.trim() ? displayName.trim() : username,
       email: session.user.email ?? null,
       ...(defaultBytes
