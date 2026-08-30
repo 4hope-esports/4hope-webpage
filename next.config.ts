@@ -3,7 +3,7 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   serverExternalPackages: ['sharp'],
   outputFileTracingIncludes: {
-    '/api/**': ['./node_modules/@img/**/*'],
+    '/**': ['./node_modules/@img/**/*', './node_modules/sharp/**/*'],
   },
   images: {
     remotePatterns: [
