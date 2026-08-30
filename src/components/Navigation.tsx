@@ -1,8 +1,12 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
-import { Menu, X } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import { signOut, useSession } from 'next-auth/react'
+import { useEffect, useRef, useState } from 'react'
+import { LogIn, LogOut, Menu, User, X } from 'lucide-react'
+import { Avatar } from '@/components/ui/Avatar'
 
 interface NavLink {
   label: string
@@ -13,9 +17,11 @@ interface NavigationProps {
   discordUrl: string
 }
 
+// Hash links are always rooted at "/" (not the current path) so they resolve
+// correctly from any page, not just the home page itself.
 const LINKS: NavLink[] = [
-  { label: 'Home', href: '#home' },
-  { label: 'Roster', href: '#roster' },
+  { label: 'Home', href: '/#home' },
+  { label: 'Roster', href: '/#roster' },
 ]
 
 function DiscordIcon() {
@@ -27,11 +33,41 @@ function DiscordIcon() {
 }
 
 export function Navigation({ discordUrl }: NavigationProps) {
-  const [active, setActive] = useState('#home')
+  const pathname = usePathname()
+  const router = useRouter()
+  const { data: session, status } = useSession()
+  const [active, setActive] = useState('/#home')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [photoURL, setPhotoURL] = useState<string | null>(null)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+
+  const onLandingPage = pathname === '/'
+  const isSignedIn = status === 'authenticated'
 
   useEffect(() => {
-    const sections = LINKS.map((l) => document.getElementById(l.href.slice(1))).filter(
+    if (!isSignedIn) {
+      setPhotoURL(null)
+      return
+    }
+    let cancelled = false
+    fetch('/api/profile/me')
+      .then((res) => res.json())
+      .then((data: { profile?: { photoURL?: string | null } }) => {
+        if (!cancelled) setPhotoURL(data.profile?.photoURL ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoURL(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isSignedIn])
+
+  useEffect(() => {
+    if (!onLandingPage) return
+
+    const sections = LINKS.map((l) => document.getElementById(l.href.slice(2))).filter(
       (el): el is HTMLElement => el !== null,
     )
 
@@ -41,7 +77,7 @@ export function Navigation({ discordUrl }: NavigationProps) {
       (entries) => {
         const visible = entries.filter((e) => e.isIntersecting)
         if (visible.length > 0) {
-          setActive(`#${visible[0].target.id}`)
+          setActive(`/#${visible[0].target.id}`)
         }
       },
       { rootMargin: '-64px 0px -85% 0px' },
@@ -49,9 +85,21 @@ export function Navigation({ discordUrl }: NavigationProps) {
 
     sections.forEach((el) => observer.observe(el))
     return () => observer.disconnect()
-  }, [])
+  }, [onLandingPage])
 
-  const isHome = active === '#home'
+  useEffect(() => {
+    if (!profileMenuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [profileMenuOpen])
+
+  const isActiveLink = (href: string) => onLandingPage && active === href
+  const isHome = onLandingPage && active === '/#home'
 
   const meetTheSquadButton = (
     <a
@@ -82,11 +130,13 @@ export function Navigation({ discordUrl }: NavigationProps) {
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-ink-1000/86 backdrop-blur-md">
       <div className="flex h-16 items-center gap-7 px-5 sm:px-7">
-        <Image src="/brand/logo.png" alt="4Hope" width={34} height={34} className="h-[34px] w-[34px]" />
+        <Link href="/" aria-label="4Hope home" className="flex items-center">
+          <Image src="/brand/logo.png" alt="4Hope" width={34} height={34} className="h-[34px] w-[34px]" />
+        </Link>
 
         <nav className="hidden gap-1 sm:flex">
           {LINKS.map((link) => {
-            const isActive = active === link.href
+            const isActive = isActiveLink(link.href)
             return (
               <a
                 key={link.label}
@@ -105,6 +155,54 @@ export function Navigation({ discordUrl }: NavigationProps) {
 
         <div className="hidden sm:block">{!isHome && meetTheSquadButton}</div>
 
+        {isSignedIn ? (
+          <div className="relative" ref={profileMenuRef}>
+            <button
+              type="button"
+              aria-label="Account menu"
+              aria-expanded={profileMenuOpen}
+              onClick={() => setProfileMenuOpen((open) => !open)}
+              className="flex items-center rounded-full"
+            >
+              <Avatar src={photoURL} name={session?.user?.name ?? ''} size="sm" />
+            </button>
+            {profileMenuOpen ? (
+              <div className="absolute right-0 top-full mt-2 w-44 overflow-hidden rounded-[10px] border border-white/10 bg-ink-900 py-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileMenuOpen(false)
+                    router.push('/profile')
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-white/80 hover:bg-white/10 hover:text-white"
+                >
+                  <User size={16} />
+                  See profile
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileMenuOpen(false)
+                    signOut({ callbackUrl: '/login' })
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-white/80 hover:bg-white/10 hover:text-white"
+                >
+                  <LogOut size={16} />
+                  Sign out
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 font-display text-sm font-bold uppercase tracking-[0.04em] text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <LogIn size={18} />
+            <span className="hidden sm:inline">Join us</span>
+          </Link>
+        )}
+
         <button
           type="button"
           aria-label={menuOpen ? 'Close menu' : 'Open menu'}
@@ -119,7 +217,7 @@ export function Navigation({ discordUrl }: NavigationProps) {
       {menuOpen && (
         <div className="flex flex-col gap-1 border-t border-white/10 px-5 py-3 sm:hidden">
           {LINKS.map((link) => {
-            const isActive = active === link.href
+            const isActive = isActiveLink(link.href)
             return (
               <a
                 key={link.label}
