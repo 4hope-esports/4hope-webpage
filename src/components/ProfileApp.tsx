@@ -832,7 +832,7 @@ function SettingsTab({
             </p>
           ) : null}
           {photoChanged ? (
-            <p>{removePhoto ? 'Your profile photo will revert to your Google account photo.' : 'Your profile photo will be updated.'}</p>
+            <p>{removePhoto ? 'Your profile photo will revert to the default.' : 'Your profile photo will be updated.'}</p>
           ) : null}
         </div>
       </Dialog>

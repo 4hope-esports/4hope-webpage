@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { auth } from "@/lib/auth";
 import { envCollection, getAdminDb } from "@/lib/firebaseAdmin";
-import { compressAvatarDataUrl, fetchAndCompressAvatar, resolvePhotoSrc } from "@/lib/avatar";
+import { compressAvatarDataUrl, resolvePhotoSrc } from "@/lib/avatar";
 
 export async function GET() {
   const session = await auth();
@@ -25,21 +25,11 @@ export async function GET() {
 
   let profile = doc.data()!;
 
-  // Self-heal: a doc created before avatar compression existed (or whose compression failed at
-  // the time) has no photo.defaultBytes yet — retry now.
-  if (!Buffer.isBuffer(profile.photo?.defaultBytes) && !Buffer.isBuffer(profile.photoBytes) && session.user.image) {
-    const defaultBytes = await fetchAndCompressAvatar(session.user.image);
-    if (defaultBytes) {
-      const existingPhoto = profile.photo ?? {};
-      const photo = {
-        ...existingPhoto,
-        defaultBytes,
-        gmailUrl: session.user.image,
-        currentBytes: Buffer.isBuffer(existingPhoto.bytes) ? existingPhoto.bytes : defaultBytes,
-      };
-      await docRef.set({ photo }, { merge: true });
-      profile = { ...profile, photo };
-    }
+  // Self-heal: keep the recorded Gmail photo URL current even though it's not used for display.
+  if (session.user.image && profile.photo?.gmailUrl !== session.user.image) {
+    const photo = { ...(profile.photo ?? {}), gmailUrl: session.user.image };
+    await docRef.set({ photo }, { merge: true });
+    profile = { ...profile, photo };
   }
 
   return NextResponse.json({ exists: true, profile: { ...profile, photoURL: resolvePhotoSrc(profile) } });
@@ -65,7 +55,6 @@ export async function POST(request: Request) {
 
   const docRef = usersCol.doc(session.user.id);
 
-  const defaultBytes = session.user.image ? await fetchAndCompressAvatar(session.user.image) : null;
   const customBytes = typeof photoDataUrl === "string" && photoDataUrl ? await compressAvatarDataUrl(photoDataUrl) : null;
 
   await docRef.set(
@@ -74,15 +63,10 @@ export async function POST(request: Request) {
       usernameKey,
       displayName: typeof displayName === "string" && displayName.trim() ? displayName.trim() : username,
       email: session.user.email ?? null,
-      ...(defaultBytes || customBytes
-        ? {
-            photo: {
-              ...(defaultBytes ? { defaultBytes, gmailUrl: session.user.image ?? null } : {}),
-              ...(customBytes ? { bytes: customBytes } : {}),
-              currentBytes: customBytes ?? defaultBytes,
-            },
-          }
-        : {}),
+      photo: {
+        gmailUrl: session.user.image ?? null,
+        ...(customBytes ? { bytes: customBytes, currentBytes: customBytes } : {}),
+      },
       createdAt: new Date().toISOString(),
     },
     { merge: true },
@@ -113,16 +97,10 @@ export async function PATCH(request: Request) {
     const bytes = await compressAvatarDataUrl(photoDataUrl);
     if (bytes) photoUpdate = { "photo.bytes": bytes, "photo.currentBytes": bytes };
   } else if (removePhoto) {
-    // Drop the custom upload and point currentBytes back at the Google photo; refresh that
-    // default first in case it was never captured or Google's has changed.
-    const existingPhoto = doc.data()?.photo ?? {};
-    const gmailUrl = existingPhoto.gmailUrl ?? session.user.image ?? null;
-    const defaultBytes = gmailUrl ? await fetchAndCompressAvatar(gmailUrl) : null;
+    // Drop the custom upload; with no currentBytes left, the client falls back to the clover mark.
     photoUpdate = {
       "photo.bytes": FieldValue.delete(),
-      ...(defaultBytes
-        ? { "photo.defaultBytes": defaultBytes, "photo.gmailUrl": gmailUrl, "photo.currentBytes": defaultBytes }
-        : { "photo.currentBytes": FieldValue.delete() }),
+      "photo.currentBytes": FieldValue.delete(),
     };
   }
 

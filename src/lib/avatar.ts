@@ -19,11 +19,10 @@ async function compressDataUrlImage(dataUrl: string, dimension: number, quality:
 }
 
 /**
- * Decodes a Firestore-stored avatar into a displayable src. `photo.currentBytes` always holds
- * a copy of whichever image is currently active (the custom upload in `photo.bytes`, or the
- * compressed Google photo in `photo.defaultBytes`) so this never has to choose between them;
- * falls back to a legacy top-level `photoBytes`/`photoURL` for docs written before the `photo`
- * object existed.
+ * Decodes a Firestore-stored avatar into a displayable src. `photo.currentBytes` holds the
+ * user's custom upload, if any; with no custom upload this returns null and callers fall back
+ * to the default clover mark instead of a Google photo. Falls back to a legacy top-level
+ * `photoBytes`/`photoURL` for docs written before the `photo` object existed.
  */
 export function resolvePhotoSrc(profile: FirebaseFirestore.DocumentData): string | null {
   const photo = profile.photo ?? {};
@@ -34,19 +33,6 @@ export function resolvePhotoSrc(profile: FirebaseFirestore.DocumentData): string
     return `data:${AVATAR_CONTENT_TYPE};base64,${profile.photoBytes.toString("base64")}`;
   }
   return profile.photoURL ?? null;
-}
-
-/** Downloads a profile photo (e.g. Google's) and compresses it to a small square WebP buffer for Firestore storage. */
-export async function fetchAndCompressAvatar(url: string): Promise<Buffer | null> {
-  try {
-    const res = await fetch(url, { headers: { Referer: "" } });
-    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-    const arrayBuffer = await res.arrayBuffer();
-    return await compressImageBuffer(Buffer.from(arrayBuffer), AVATAR_DIMENSION, 70);
-  } catch (error) {
-    console.error("Failed to fetch/compress avatar", error);
-    return null;
-  }
 }
 
 /** Compresses a user-uploaded (already square-cropped) image data URL into a small WebP buffer for Firestore storage. */
