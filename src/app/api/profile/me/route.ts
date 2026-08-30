@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  const { username, displayName } = await request.json();
+  const { username, displayName, photoDataUrl } = await request.json();
   if (!username || typeof username !== "string" || !/^[A-Za-z0-9_-]{1,24}$/.test(username)) {
     return NextResponse.json({ error: "Invalid username" }, { status: 400 });
   }
@@ -66,6 +66,7 @@ export async function POST(request: Request) {
   const docRef = usersCol.doc(session.user.id);
 
   const defaultBytes = session.user.image ? await fetchAndCompressAvatar(session.user.image) : null;
+  const customBytes = typeof photoDataUrl === "string" && photoDataUrl ? await compressAvatarDataUrl(photoDataUrl) : null;
 
   await docRef.set(
     {
@@ -73,8 +74,14 @@ export async function POST(request: Request) {
       usernameKey,
       displayName: typeof displayName === "string" && displayName.trim() ? displayName.trim() : username,
       email: session.user.email ?? null,
-      ...(defaultBytes
-        ? { photo: { defaultBytes, gmailUrl: session.user.image ?? null, currentBytes: defaultBytes } }
+      ...(defaultBytes || customBytes
+        ? {
+            photo: {
+              ...(defaultBytes ? { defaultBytes, gmailUrl: session.user.image ?? null } : {}),
+              ...(customBytes ? { bytes: customBytes } : {}),
+              currentBytes: customBytes ?? defaultBytes,
+            },
+          }
         : {}),
       createdAt: new Date().toISOString(),
     },

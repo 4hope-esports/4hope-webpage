@@ -3,8 +3,9 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { signOut } from 'next-auth/react'
-import { CheckCircle2, Loader2 } from 'lucide-react'
+import { CheckCircle2, Loader2, Pencil } from 'lucide-react'
 import { Avatar, Button, Card, FormField, GoldBars, Input, ValidatedInput } from '@/components/ui'
+import { CropDialog, useImageCropFlow } from '@/components/ImageCropFlow'
 
 interface Account {
   name: string | null
@@ -35,6 +36,7 @@ function RegisterForm() {
   const [displayName, setDisplayName] = useState('')
   const [status, setStatus] = useState<'loading' | 'idle' | 'saving'>('loading')
   const [error, setError] = useState<string | null>(null)
+  const photo = useImageCropFlow(null)
 
   useEffect(() => {
     fetch('/api/profile/me')
@@ -51,6 +53,7 @@ function RegisterForm() {
         setAccount(data.account)
         setUsername(defaultUsername(data.account.email))
         setDisplayName(data.account.name ?? '')
+        photo.reset(data.account.picture ?? null)
         setStatus('idle')
       })
       .catch(() => setError('Could not load your account. Please try signing in again.'))
@@ -69,7 +72,11 @@ function RegisterForm() {
       const res = await fetch('/api/profile/me', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, displayName }),
+        body: JSON.stringify({
+          username,
+          displayName,
+          ...(photo.image && photo.image !== account?.picture ? { photoDataUrl: photo.image } : {}),
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Failed to save profile')
@@ -103,13 +110,33 @@ function RegisterForm() {
         </div>
 
         <div className="mb-6 flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3.5 py-3">
-          <Avatar src={account.picture} name={account.name ?? account.email ?? ''} size="lg" ring />
+          <label className="group relative flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full">
+            <Avatar src={photo.image} name={account.name ?? account.email ?? ''} size="lg" ring />
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 opacity-0 transition group-hover:bg-black/55 group-hover:opacity-100">
+              <Pencil size={16} className="text-white" />
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => photo.handleFile(e.target.files?.[0])}
+            />
+          </label>
           <div className="min-w-0">
             <div className="truncate text-[15px] font-semibold text-white">{account.name ?? account.email}</div>
             <div className="truncate text-[13px] text-white/60">{account.email}</div>
           </div>
           <CheckCircle2 size={18} className="ml-auto shrink-0 text-gold-500" />
         </div>
+
+        <CropDialog
+          open={photo.cropOpen}
+          src={photo.rawImage}
+          pendingCrop={photo.pendingCrop}
+          onChange={photo.setPendingCrop}
+          onCancel={photo.handleCropCancel}
+          onDone={photo.handleCropDone}
+        />
 
         <form onSubmit={handleSubmit}>
           <ValidatedInput
