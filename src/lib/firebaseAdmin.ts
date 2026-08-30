@@ -23,3 +23,13 @@ export function getAdminDb(): Firestore {
   if (!cachedDb) cachedDb = getFirestore(getAdminApp());
   return cachedDb;
 }
+
+/**
+ * Suffixes a Firestore collection name with "-uat" outside production, so
+ * dev/uat traffic never reads or writes prod data.
+ * APP_ENV is "production" | "uat"; only "production" is unsuffixed.
+ */
+export function envCollection(name: string): string {
+  const isProd = process.env.APP_ENV === "production";
+  return isProd ? name : `${name}-uat`;
+}

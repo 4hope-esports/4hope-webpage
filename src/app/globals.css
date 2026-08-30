@@ -13,6 +13,14 @@
   --font-brand: "TT Bluescreens Trial", "Archivo", system-ui, sans-serif;
 }
 
+@keyframes dialog-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(7px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(3px); }
+}
+
 @font-face {
   font-family: "TT Bluescreens Trial";
   src: url("/fonts/TT_Bluescreens_Trial_Bold_Italic.ttf") format("truetype");
