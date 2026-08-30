@@ -1,6 +1,5 @@
 import { cert, getApps, getApp, initializeApp } from "firebase-admin/app";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
-import { getAuth, Auth } from "firebase-admin/auth";
 
 function getAdminApp() {
   if (getApps().length) return getApp();
@@ -23,13 +22,6 @@ let cachedDb: Firestore | null = null;
 export function getAdminDb(): Firestore {
   if (!cachedDb) cachedDb = getFirestore(getAdminApp());
   return cachedDb;
-}
-
-let cachedAuth: Auth | null = null;
-
-export function getAdminAuth(): Auth {
-  if (!cachedAuth) cachedAuth = getAuth(getAdminApp());
-  return cachedAuth;
 }
 
 /**
