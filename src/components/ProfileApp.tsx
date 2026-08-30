@@ -764,9 +764,8 @@ function SettingsTab({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={photo.image} alt="" className="h-full w-full object-cover" />
               ) : (
-                <span className="font-display text-4xl font-extrabold text-gold-500">
-                  {(draftName || displayName || '?').charAt(0).toUpperCase()}
-                </span>
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src="/brand/clover-mark.png" alt="" className="h-[55%] w-[55%] opacity-85" />
               )}
               <span className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/55 group-hover:opacity-100">
                 <Pencil size={24} className="text-white" />
