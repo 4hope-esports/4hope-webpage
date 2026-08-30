@@ -5,6 +5,7 @@ import { signOut } from 'next-auth/react'
 import { Check, Crown, LogOut, Mail, Pencil, Plus, Link as LinkIcon, LogOutIcon, Search, Shield, User, UserX, Users } from 'lucide-react'
 import { Avatar, Button, Card, Dialog, Divider, FormField, IconButton, ImageCropper, Input, Tabs, Tag, Tooltip, ValidatedInput } from '@/components/ui'
 import { useToast } from '@/components/ui/ToastProvider'
+import { postJson, requestJson } from '@/lib/api'
 import { defaultTeamCode, isValidTeamCode, normalizeTeamName } from '@/lib/team'
 
 interface TeamMember {
@@ -12,6 +13,100 @@ interface TeamMember {
   displayName: string
   photoURL: string | null
   isManager: boolean
+}
+
+/** Shared "pick a file -> crop it -> confirm/cancel" flow used by both the team-logo and account-photo croppers. */
+function useImageCropFlow(initialValue: string | null) {
+  const [image, setImage] = useState(initialValue)
+  const [rawImage, setRawImage] = useState<string | null>(null)
+  const [pendingCrop, setPendingCrop] = useState<string | null>(null)
+  const [cropOpen, setCropOpen] = useState(false)
+
+  const handleFile = (file: File | undefined) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      setRawImage(reader.result as string)
+      setPendingCrop(null)
+      setCropOpen(true)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleCropDone = () => {
+    if (pendingCrop) setImage(pendingCrop)
+    setCropOpen(false)
+    setRawImage(null)
+  }
+
+  const handleCropCancel = () => {
+    setCropOpen(false)
+    setRawImage(null)
+  }
+
+  const reset = (value: string | null) => {
+    setImage(value)
+    setRawImage(null)
+    setPendingCrop(null)
+    setCropOpen(false)
+  }
+
+  return {
+    image,
+    setImage,
+    rawImage,
+    pendingCrop,
+    setPendingCrop,
+    cropOpen,
+    setCropOpen,
+    handleFile,
+    handleCropDone,
+    handleCropCancel,
+    reset,
+  }
+}
+
+/** The "Customize picture" crop dialog shared by the team-logo and account-photo flows. */
+function CropDialog({
+  open,
+  src,
+  pendingCrop,
+  onChange,
+  onCancel,
+  onDone,
+}: {
+  open: boolean
+  src: string | null
+  pendingCrop: string | null
+  onChange: (dataUrl: string) => void
+  onCancel: () => void
+  onDone: () => void
+}) {
+  return (
+    <Dialog
+      open={open}
+      title="Customize picture"
+      onClose={onCancel}
+      closeOnBackdropClick={false}
+      className="max-w-[600px]"
+      actions={
+        <>
+          <Button variant="subtle" className="text-white" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!pendingCrop} onClick={onDone}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      {src ? (
+        <div className="flex justify-center">
+          <ImageCropper src={src} onChange={onChange} />
+        </div>
+      ) : null}
+    </Dialog>
+  )
 }
 
 interface ProfileAppProps {
@@ -395,13 +490,11 @@ function LeaveTeamDialog({
     setSaving(true)
     setError(null)
     try {
-      const res = await fetch('/api/teams/leave', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(needsSuccessor ? { newOwnerId } : {}),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to leave team')
+      const data = await postJson<{ teamClosed: boolean; teamName: string }>(
+        '/api/teams/leave',
+        needsSuccessor ? { newOwnerId } : {},
+        'Failed to leave team',
+      )
       showToast({
         type: 'positive',
         title: 'Left team',
@@ -480,9 +573,7 @@ function InviteRosterButton() {
     if (state === 'loading') return
     setState('loading')
     try {
-      const res = await fetch('/api/teams/invite', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to create invite link')
+      const data = await postJson<{ inviteUrl: string }>('/api/teams/invite', undefined, 'Failed to create invite link')
 
       await navigator.clipboard.writeText(data.inviteUrl)
       showToast({
@@ -539,10 +630,7 @@ function TeamDialog({
   const [name, setName] = useState(initial?.name ?? '')
   const [code, setCode] = useState(initial?.code ?? '')
   const [codeFocused, setCodeFocused] = useState(false)
-  const [rawImage, setRawImage] = useState<string | null>(null)
-  const [pendingCrop, setPendingCrop] = useState<string | null>(null)
-  const [croppedImage, setCroppedImage] = useState<string | null>(initial?.logoURL ?? null)
-  const [cropOpen, setCropOpen] = useState(false)
+  const logo = useImageCropFlow(initial?.logoURL ?? null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -560,10 +648,7 @@ function TeamDialog({
     setName(initial?.name ?? '')
     setCode(initial?.code ?? '')
     setCodeFocused(false)
-    setRawImage(null)
-    setPendingCrop(null)
-    setCroppedImage(initial?.logoURL ?? null)
-    setCropOpen(false)
+    logo.reset(initial?.logoURL ?? null)
     setError(null)
   }
 
@@ -578,45 +663,18 @@ function TeamDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const handleFile = (file: File | undefined) => {
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setRawImage(reader.result as string)
-      setPendingCrop(null)
-      setCropOpen(true)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  const handleCropDone = () => {
-    setCroppedImage(pendingCrop)
-    setCropOpen(false)
-  }
-
-  const handleCropCancel = () => {
-    setCropOpen(false)
-    if (!croppedImage) setRawImage(null)
-  }
-
   const handleSubmit = async () => {
     if (!canSubmit) return
     setSaving(true)
     setError(null)
     const finalName = nameValid ? nameCheck.value : name
     try {
-      const res = await fetch('/api/teams', {
+      await requestJson('/api/teams', {
         method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: finalName,
-          code: effectiveCode,
-          logoDataUrl: croppedImage,
-        }),
+        body: { name: finalName, code: effectiveCode, logoDataUrl: logo.image },
+        fallbackError: `Failed to ${isEdit ? 'save' : 'create'} team`,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || `Failed to ${isEdit ? 'save' : 'create'} team`)
-      onSaved(finalName, effectiveCode, croppedImage)
+      onSaved(finalName, effectiveCode, logo.image)
       showToast({
         type: 'positive',
         title: isEdit ? 'Team updated' : 'Team created',
@@ -650,23 +708,20 @@ function TeamDialog({
     >
       <div className="flex flex-col gap-4">
         <FormField label="Team logo" hint="Upload an image, then crop it to a square.">
-          {croppedImage ? (
+          {logo.image ? (
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={croppedImage} alt="" className="h-16 w-16 rounded-[14px] object-cover" />
+              <img src={logo.image} alt="" className="h-16 w-16 rounded-[14px] object-cover" />
               <button
                 type="button"
-                onClick={() => setCropOpen(true)}
+                onClick={() => logo.setCropOpen(true)}
                 className="text-xs text-gold-500 underline-offset-2 hover:underline"
               >
                 Edit crop
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setRawImage(null)
-                  setCroppedImage(null)
-                }}
+                onClick={() => logo.setImage(null)}
                 className="text-xs text-white/50 underline-offset-2 hover:underline"
               >
                 Remove
@@ -679,7 +734,7 @@ function TeamDialog({
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => handleFile(e.target.files?.[0])}
+                onChange={(e) => logo.handleFile(e.target.files?.[0])}
               />
             </label>
           )}
@@ -712,29 +767,14 @@ function TeamDialog({
         {error ? <p className="text-sm text-red-400">{error}</p> : null}
       </div>
 
-      <Dialog
-        open={cropOpen}
-        title="Customize picture"
-        onClose={handleCropCancel}
-        closeOnBackdropClick={false}
-        className="max-w-[600px]"
-        actions={
-          <>
-            <Button variant="subtle" className="text-white" onClick={handleCropCancel}>
-              Cancel
-            </Button>
-            <Button variant="primary" disabled={!pendingCrop} onClick={handleCropDone}>
-              Done
-            </Button>
-          </>
-        }
-      >
-        {rawImage || croppedImage ? (
-          <div className="flex justify-center">
-            <ImageCropper src={rawImage ?? croppedImage!} onChange={setPendingCrop} />
-          </div>
-        ) : null}
-      </Dialog>
+      <CropDialog
+        open={logo.cropOpen}
+        src={logo.rawImage ?? logo.image}
+        pendingCrop={logo.pendingCrop}
+        onChange={logo.setPendingCrop}
+        onCancel={logo.handleCropCancel}
+        onDone={logo.handleCropDone}
+      />
     </Dialog>
   )
 }
@@ -754,45 +794,22 @@ function SettingsTab({
 }) {
   const { showToast } = useToast()
   const [draftName, setDraftName] = useState(displayName)
-  const [draftPhoto, setDraftPhoto] = useState<string | null>(photoURL ?? null)
   const [removePhoto, setRemovePhoto] = useState(false)
-  const [rawPhoto, setRawPhoto] = useState<string | null>(null)
-  const [pendingPhotoCrop, setPendingPhotoCrop] = useState<string | null>(null)
-  const [photoCropOpen, setPhotoCropOpen] = useState(false)
+  const photo = useImageCropFlow(photoURL ?? null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const nameChanged = draftName.trim().length > 0 && draftName.trim() !== displayName
-  const photoChanged = removePhoto || draftPhoto !== (photoURL ?? null)
+  const photoChanged = removePhoto || photo.image !== (photoURL ?? null)
   const hasChanges = nameChanged || photoChanged
 
-  const handlePhotoFile = (file: File | undefined) => {
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setRawPhoto(reader.result as string)
-      setPendingPhotoCrop(null)
-      setPhotoCropOpen(true)
-    }
-    reader.readAsDataURL(file)
-  }
-
   const handlePhotoCropDone = () => {
-    if (pendingPhotoCrop) {
-      setDraftPhoto(pendingPhotoCrop)
-      setRemovePhoto(false)
-    }
-    setPhotoCropOpen(false)
-    setRawPhoto(null)
-  }
-
-  const handlePhotoCropCancel = () => {
-    setPhotoCropOpen(false)
-    setRawPhoto(null)
+    if (photo.pendingCrop) setRemovePhoto(false)
+    photo.handleCropDone()
   }
 
   const handleRemovePhoto = () => {
-    setDraftPhoto(null)
+    photo.setImage(null)
     setRemovePhoto(true)
   }
 
@@ -800,17 +817,15 @@ function SettingsTab({
     setSaving(true)
     try {
       const trimmed = draftName.trim()
-      const res = await fetch('/api/profile/me', {
+      await requestJson('/api/profile/me', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           displayName: trimmed,
-          ...(removePhoto ? { removePhoto: true } : draftPhoto !== (photoURL ?? null) ? { photoDataUrl: draftPhoto } : {}),
-        }),
+          ...(removePhoto ? { removePhoto: true } : photo.image !== (photoURL ?? null) ? { photoDataUrl: photo.image } : {}),
+        },
+        fallbackError: 'Failed to save',
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to save')
-      onSaved(trimmed, removePhoto ? null : draftPhoto)
+      onSaved(trimmed, removePhoto ? null : photo.image)
       setRemovePhoto(false)
       showToast({ type: 'positive', title: 'Profile updated', message: 'Your changes have been saved.' })
     } catch {
@@ -836,9 +851,9 @@ function SettingsTab({
           </div>
           <div className="order-1 flex shrink-0 flex-col items-center gap-1.5 sm:order-2">
             <label className="group relative flex h-[120px] w-[120px] cursor-pointer items-center justify-center overflow-hidden rounded-[14px] bg-ink-700">
-              {draftPhoto ? (
+              {photo.image ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={draftPhoto} alt="" className="h-full w-full object-cover" />
+                <img src={photo.image} alt="" className="h-full w-full object-cover" />
               ) : (
                 <span className="font-display text-4xl font-extrabold text-gold-500">
                   {(draftName || displayName || '?').charAt(0).toUpperCase()}
@@ -851,10 +866,10 @@ function SettingsTab({
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => handlePhotoFile(e.target.files?.[0])}
+                onChange={(e) => photo.handleFile(e.target.files?.[0])}
               />
             </label>
-            {draftPhoto ? (
+            {photo.image ? (
               <button
                 type="button"
                 onClick={handleRemovePhoto}
@@ -913,29 +928,14 @@ function SettingsTab({
         </div>
       </Dialog>
 
-      <Dialog
-        open={photoCropOpen}
-        title="Customize picture"
-        onClose={handlePhotoCropCancel}
-        closeOnBackdropClick={false}
-        className="max-w-[600px]"
-        actions={
-          <>
-            <Button variant="subtle" className="text-white" onClick={handlePhotoCropCancel}>
-              Cancel
-            </Button>
-            <Button variant="primary" disabled={!pendingPhotoCrop} onClick={handlePhotoCropDone}>
-              Done
-            </Button>
-          </>
-        }
-      >
-        {rawPhoto ? (
-          <div className="flex justify-center">
-            <ImageCropper src={rawPhoto} onChange={setPendingPhotoCrop} />
-          </div>
-        ) : null}
-      </Dialog>
+      <CropDialog
+        open={photo.cropOpen}
+        src={photo.rawImage}
+        pendingCrop={photo.pendingCrop}
+        onChange={photo.setPendingCrop}
+        onCancel={photo.handleCropCancel}
+        onDone={handlePhotoCropDone}
+      />
     </div>
   )
 }
@@ -989,13 +989,7 @@ export function ProfileApp({
 
   const handleMemberKicked = async (memberId: string) => {
     try {
-      const res = await fetch('/api/teams/kick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to remove member')
+      await postJson('/api/teams/kick', { memberId }, 'Failed to remove member')
       setCurrentMembers((prev) => prev.filter((m) => m.id !== memberId))
       showToast({ type: 'positive', title: 'Member removed', message: 'They can request a new invite to rejoin.' })
     } catch (err) {
@@ -1009,13 +1003,7 @@ export function ProfileApp({
 
   const handleMemberPromoted = async (memberId: string) => {
     try {
-      const res = await fetch('/api/teams/promote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to assign manager')
+      await postJson('/api/teams/promote', { memberId }, 'Failed to assign manager')
       setCurrentMembers((prev) => prev.map((m) => ({ ...m, isManager: m.id === memberId })))
       setCurrentIsTeamManager(false)
       showToast({ type: 'positive', title: 'Manager updated', message: 'They now manage this squad.' })

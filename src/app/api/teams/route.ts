@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { auth } from "@/lib/auth";
 import { envCollection, getAdminDb } from "@/lib/firebaseAdmin";
 import { compressTeamLogo } from "@/lib/avatar";
 import { defaultTeamCode, isValidTeamCode, normalizeTeamName, teamNameKey } from "@/lib/team";
+import { requireSession, requireTeamOwner, requireUserTeamId } from "@/lib/teamAuth";
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
   const { name, code, logoDataUrl } = await request.json();
 
@@ -59,10 +57,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
   const { name, code, logoDataUrl } = await request.json();
 
@@ -77,20 +73,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Team code must be exactly 2 characters (0-9, A-Z)." }, { status: 400 });
   }
 
-  const db = getAdminDb();
-  const userDoc = await db.collection(envCollection("users")).doc(session.user.id).get();
-  const teamId = userDoc.data()?.teamId;
-  if (!teamId) {
-    return NextResponse.json({ error: "You're not on a team." }, { status: 404 });
-  }
+  const teamId = await requireUserTeamId(session.user.id);
+  if (teamId instanceof NextResponse) return teamId;
 
-  const teamsCol = db.collection(envCollection("teams"));
-  const teamRef = teamsCol.doc(teamId);
-  const teamDoc = await teamRef.get();
-  if (!teamDoc.exists || teamDoc.data()?.ownerId !== session.user.id) {
-    return NextResponse.json({ error: "Only the team manager can edit this team." }, { status: 403 });
-  }
+  const teamDoc = await requireTeamOwner(teamId, session.user.id, "Only the team manager can edit this team.");
+  if (teamDoc instanceof NextResponse) return teamDoc;
 
+  const teamsCol = getAdminDb().collection(envCollection("teams"));
   const nameKey = teamNameKey(teamName);
   const dupe = await teamsCol.where("nameKey", "==", nameKey).limit(1).get();
   if (!dupe.empty && dupe.docs[0].id !== teamId) {
@@ -101,7 +90,7 @@ export async function PATCH(request: Request) {
   // logoBytes always reflects what the client showed when it submitted the form.
   const logoBytes = typeof logoDataUrl === "string" && logoDataUrl ? await compressTeamLogo(logoDataUrl) : null;
 
-  await teamRef.set(
+  await teamDoc.ref.set(
     {
       name: teamName,
       nameKey,

@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { auth } from "@/lib/auth";
 import { envCollection, getAdminDb } from "@/lib/firebaseAdmin";
+import { requireSession, requireUserTeamId } from "@/lib/teamAuth";
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
   const { newOwnerId } = await request.json().catch(() => ({}));
 
@@ -16,11 +14,8 @@ export async function POST(request: Request) {
   const teamsCol = db.collection(envCollection("teams"));
 
   const userRef = usersCol.doc(session.user.id);
-  const userDoc = await userRef.get();
-  const teamId = userDoc.data()?.teamId;
-  if (!teamId) {
-    return NextResponse.json({ error: "You're not on a team." }, { status: 404 });
-  }
+  const teamId = await requireUserTeamId(session.user.id);
+  if (teamId instanceof NextResponse) return teamId;
 
   const teamRef = teamsCol.doc(teamId);
   const teamDoc = await teamRef.get();

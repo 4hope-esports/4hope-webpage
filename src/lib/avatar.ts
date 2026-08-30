@@ -3,6 +3,21 @@ import sharp from "sharp";
 export const AVATAR_CONTENT_TYPE = "image/webp";
 const AVATAR_DIMENSION = 128;
 
+/** Resizes+re-encodes image bytes into a small square WebP buffer for Firestore storage. */
+async function compressImageBuffer(input: Buffer, dimension: number, quality: number): Promise<Buffer> {
+  return sharp(input)
+    .resize(dimension, dimension, { fit: "cover" })
+    .webp({ quality })
+    .toBuffer();
+}
+
+/** Compresses a user-uploaded (already square-cropped) image data URL into a small WebP buffer. */
+async function compressDataUrlImage(dataUrl: string, dimension: number, quality: number): Promise<Buffer | null> {
+  const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/.exec(dataUrl);
+  if (!match) return null;
+  return compressImageBuffer(Buffer.from(match[1], "base64"), dimension, quality);
+}
+
 /**
  * Decodes a Firestore-stored avatar into a displayable src. `photo.currentBytes` always holds
  * a copy of whichever image is currently active (the custom upload in `photo.bytes`, or the
@@ -27,11 +42,7 @@ export async function fetchAndCompressAvatar(url: string): Promise<Buffer | null
     const res = await fetch(url, { headers: { Referer: "" } });
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
     const arrayBuffer = await res.arrayBuffer();
-
-    return await sharp(Buffer.from(arrayBuffer))
-      .resize(AVATAR_DIMENSION, AVATAR_DIMENSION, { fit: "cover" })
-      .webp({ quality: 70 })
-      .toBuffer();
+    return await compressImageBuffer(Buffer.from(arrayBuffer), AVATAR_DIMENSION, 70);
   } catch (error) {
     console.error("Failed to fetch/compress avatar", error);
     return null;
@@ -41,14 +52,7 @@ export async function fetchAndCompressAvatar(url: string): Promise<Buffer | null
 /** Compresses a user-uploaded (already square-cropped) image data URL into a small WebP buffer for Firestore storage. */
 export async function compressAvatarDataUrl(dataUrl: string): Promise<Buffer | null> {
   try {
-    const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/.exec(dataUrl);
-    if (!match) return null;
-    const input = Buffer.from(match[1], "base64");
-
-    return await sharp(input)
-      .resize(AVATAR_DIMENSION, AVATAR_DIMENSION, { fit: "cover" })
-      .webp({ quality: 80 })
-      .toBuffer();
+    return await compressDataUrlImage(dataUrl, AVATAR_DIMENSION, 80);
   } catch (error) {
     console.error("Failed to compress avatar", error);
     return null;
@@ -69,14 +73,7 @@ export function resolveTeamLogoSrc(team: FirebaseFirestore.DocumentData): string
 /** Compresses a user-uploaded (already square-cropped) image data URL into a small WebP buffer for Firestore storage. */
 export async function compressTeamLogo(dataUrl: string): Promise<Buffer | null> {
   try {
-    const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/.exec(dataUrl);
-    if (!match) return null;
-    const input = Buffer.from(match[1], "base64");
-
-    return await sharp(input)
-      .resize(TEAM_LOGO_DIMENSION, TEAM_LOGO_DIMENSION, { fit: "cover" })
-      .webp({ quality: 80 })
-      .toBuffer();
+    return await compressDataUrlImage(dataUrl, TEAM_LOGO_DIMENSION, 80);
   } catch (error) {
     console.error("Failed to compress team logo", error);
     return null;

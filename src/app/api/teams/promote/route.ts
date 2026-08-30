@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { envCollection, getAdminDb } from "@/lib/firebaseAdmin";
+import { requireSession, requireTeamOwner, requireUserTeamId } from "@/lib/teamAuth";
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
   const { memberId } = await request.json().catch(() => ({}));
   if (typeof memberId !== "string" || !memberId) {
@@ -16,28 +13,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "You're already the manager." }, { status: 400 });
   }
 
-  const db = getAdminDb();
-  const usersCol = db.collection(envCollection("users"));
-  const teamsCol = db.collection(envCollection("teams"));
+  const teamId = await requireUserTeamId(session.user.id);
+  if (teamId instanceof NextResponse) return teamId;
 
-  const userDoc = await usersCol.doc(session.user.id).get();
-  const teamId = userDoc.data()?.teamId;
-  if (!teamId) {
-    return NextResponse.json({ error: "You're not on a team." }, { status: 404 });
-  }
+  const teamDoc = await requireTeamOwner(teamId, session.user.id, "Only the team manager can assign a new manager.");
+  if (teamDoc instanceof NextResponse) return teamDoc;
 
-  const teamRef = teamsCol.doc(teamId);
-  const teamDoc = await teamRef.get();
-  if (!teamDoc.exists || teamDoc.data()?.ownerId !== session.user.id) {
-    return NextResponse.json({ error: "Only the team manager can assign a new manager." }, { status: 403 });
-  }
-
-  const memberDoc = await teamRef.collection("members").doc(memberId).get();
+  const memberDoc = await teamDoc.ref.collection("members").doc(memberId).get();
   if (!memberDoc.exists) {
     return NextResponse.json({ error: "That player isn't on this team." }, { status: 404 });
   }
 
-  await teamRef.set({ ownerId: memberId }, { merge: true });
+  await teamDoc.ref.set({ ownerId: memberId }, { merge: true });
 
   return NextResponse.json({ ok: true });
 }
