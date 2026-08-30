@@ -8,7 +8,7 @@ function inviteCode(url: string): string | null {
 }
 
 export async function GET() {
-  const discordUrl = process.env.DISCORD_URL;
+  const discordUrl = process.env.NEXT_PUBLIC_DISCORD_URL;
   const code = discordUrl ? inviteCode(discordUrl) : null;
 
   if (!code) {

@@ -14,7 +14,7 @@ export default async function ProfilePage() {
   const rawProfile = doc.data()
   if (!doc.exists || !rawProfile?.username) redirect('/register')
   const profile = rawProfile
-  const discordUrl = process.env.DISCORD_URL ?? ''
+  const discordUrl = process.env.NEXT_PUBLIC_DISCORD_URL ?? ''
 
   let teamName: string | null = null
   let teamCode: string | null = null

@@ -16,6 +16,7 @@ export default function Error({
 
   return (
     <StatusErrorPage
+      discordUrl={process.env.NEXT_PUBLIC_DISCORD_URL ?? ''}
       kicker="// ERROR 500 — SERVER DOWN"
       code="500"
       heading="TEAM WIPE."

@@ -1,7 +1,7 @@
 import { StatusErrorPage } from '@/components/StatusErrorPage'
 
 export default function NotFound() {
-  const discordUrl = process.env.DISCORD_URL ?? ''
+  const discordUrl = process.env.NEXT_PUBLIC_DISCORD_URL ?? ''
 
   return (
     <StatusErrorPage
