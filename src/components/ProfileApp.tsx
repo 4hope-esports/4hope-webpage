@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { signOut } from 'next-auth/react'
 import { Check, Crown, LogOut, Mail, Pencil, Plus, Link as LinkIcon, LogOutIcon, Search, Shield, User, UserX, Users } from 'lucide-react'
 import { Avatar, Button, Card, Dialog, Divider, FormField, IconButton, Input, Tabs, Tag, Tooltip, ValidatedInput } from '@/components/ui'
@@ -142,7 +142,7 @@ function OverviewTab({
     <div className="flex max-w-[640px] flex-col gap-5">
       <Card tone="arena" className="p-6">
         <div className="mb-1 flex items-center justify-between gap-3">
-          <span className="font-mono text-xs uppercase tracking-[0.08em] text-white/50">// Team</span>
+          <span className="font-mono text-xs uppercase tracking-[0.08em] text-white/50">{'// Team'}</span>
           {!hasTeam ? (
             <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setTeamDialogOpen(true)}>
               Create team
@@ -275,7 +275,7 @@ function MembersCard({
   return (
     <Card tone="arena" className="p-6">
       <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-xs uppercase tracking-[0.08em] text-white/50">// Members</span>
+        <span className="font-mono text-xs uppercase tracking-[0.08em] text-white/50">{'// Members'}</span>
         {hasTeam && members.length > 1 ? (
           <div className="relative w-40 shrink-0 sm:w-52">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40" />
@@ -385,13 +385,14 @@ function LeaveTeamDialog({
   const otherMembers = members.filter((m) => m.id !== currentUserId)
   const needsSuccessor = isTeamManager && otherMembers.length > 0
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (open) {
       setNewOwnerId(otherMembers[0]?.id ?? '')
       setError(null)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }
 
   const handleLeave = async () => {
     setSaving(true)
@@ -565,10 +566,11 @@ function TeamDialog({
     onClose()
   }
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (open) reset()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -746,7 +748,7 @@ function SettingsTab({
   return (
     <div className="flex max-w-[560px] flex-col gap-5">
       <Card tone="arena" className="p-6">
-        <span className="font-mono text-xs uppercase tracking-[0.08em] text-white/50">// Account</span>
+        <span className="font-mono text-xs uppercase tracking-[0.08em] text-white/50">{'// Account'}</span>
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="order-2 flex flex-1 flex-col gap-4 sm:order-1">
             <FormField label="Display name" htmlFor="p-name">

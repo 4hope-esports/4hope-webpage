@@ -46,10 +46,8 @@ export function Navigation({ discordUrl }: NavigationProps) {
   const isSignedIn = status === 'authenticated'
 
   useEffect(() => {
-    if (!isSignedIn) {
-      setPhotoURL(null)
-      return
-    }
+    if (!isSignedIn) return
+
     let cancelled = false
     fetch('/api/profile/me')
       .then((res) => res.json())
@@ -63,6 +61,8 @@ export function Navigation({ discordUrl }: NavigationProps) {
       cancelled = true
     }
   }, [isSignedIn])
+
+  const displayPhotoURL = isSignedIn ? photoURL : null
 
   useEffect(() => {
     if (!onLandingPage) return
@@ -164,7 +164,7 @@ export function Navigation({ discordUrl }: NavigationProps) {
               onClick={() => setProfileMenuOpen((open) => !open)}
               className="flex items-center rounded-full"
             >
-              <Avatar src={photoURL} name={session?.user?.name ?? ''} size="sm" />
+              <Avatar src={displayPhotoURL} name={session?.user?.name ?? ''} size="sm" />
             </button>
             {profileMenuOpen ? (
               <div className="absolute right-0 top-full mt-2 w-44 overflow-hidden rounded-[10px] border border-white/10 bg-ink-900 py-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)]">

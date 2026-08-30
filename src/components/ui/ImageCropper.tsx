@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 interface ImageCropperProps {
@@ -147,12 +147,6 @@ export function ImageCropper({ src, outputSize = 256, className, onChange }: Ima
   const handlePointerUp = () => {
     dragRef.current = null
   }
-
-  useEffect(() => {
-    if (!rect) return
-    setRect((prev) => (prev ? clampRect(prev) : prev))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displaySize])
 
   return (
     <div className={cn('flex flex-col items-center', className)}>

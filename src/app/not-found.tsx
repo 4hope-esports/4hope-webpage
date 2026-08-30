@@ -27,7 +27,7 @@ export default function NotFound() {
         </div>
 
         <div className="relative mx-auto w-full max-w-[900px]">
-          <div className="mb-4.5 font-mono text-xs tracking-[0.22em] text-gold-500">// ERROR 404 — NOT FOUND</div>
+          <div className="mb-4.5 font-mono text-xs tracking-[0.22em] text-gold-500">{'// ERROR 404 — NOT FOUND'}</div>
 
           <div
             className="font-display font-black text-gold-500"

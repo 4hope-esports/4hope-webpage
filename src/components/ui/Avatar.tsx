@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 type Size = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
@@ -19,10 +19,6 @@ export function Avatar({ src = null, name = '', size = 'md', ring = false, class
   const dim = SIZE_PX[size]
   const [failed, setFailed] = useState(false)
 
-  useEffect(() => {
-    setFailed(false)
-  }, [src])
-
   return (
     <span
       className={cn(
@@ -35,6 +31,7 @@ export function Avatar({ src = null, name = '', size = 'md', ring = false, class
       {src && !failed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          key={src}
           src={src}
           alt={name}
           referrerPolicy="no-referrer"
