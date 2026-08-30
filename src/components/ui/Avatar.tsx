@@ -17,6 +17,7 @@ interface AvatarProps {
 
 export function Avatar({ src = null, name = '', size = 'md', ring = false, className }: AvatarProps) {
   const dim = SIZE_PX[size]
+  const cloverDim = Math.round(dim * 0.55)
   const [failed, setFailed] = useState(false)
 
   return (
@@ -40,7 +41,14 @@ export function Avatar({ src = null, name = '', size = 'md', ring = false, class
         />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src="/brand/clover-mark.png" alt="" className="h-[55%] w-[55%] opacity-85" />
+        <img
+          src="/brand/clover-mark.png"
+          alt=""
+          width={cloverDim}
+          height={cloverDim}
+          className="opacity-85"
+          style={{ width: cloverDim, height: cloverDim }}
+        />
       )}
     </span>
   )
