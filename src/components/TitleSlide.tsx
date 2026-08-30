@@ -60,7 +60,7 @@ export function TitleSlide({
 
         <p className="mt-5 max-w-[460px] text-lg leading-relaxed text-white/70">{subheading}</p>
 
-        <div className="mt-7 flex flex-wrap items-center gap-3">
+        <div className="mt-7 flex flex-wrap items-center gap-5">
           <a
             href={discordUrl}
             target="_blank"
