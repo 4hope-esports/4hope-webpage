@@ -107,7 +107,7 @@ export async function fetchTftPlayerStats(
     rank: rankedEntry?.rank ?? '',
     lp: rankedEntry?.leaguePoints ?? 0,
     profileIconId: summoner.profileIconId,
-    avatarUrl: profileIconUrl(summoner.profileIconId),
+    avatarUrl: await profileIconUrl(summoner.profileIconId),
     ladderRank,
     region: player.platform,
   }

@@ -3,7 +3,9 @@ import { Navigation } from '@/components/Navigation'
 import { ProfileApp } from '@/components/ProfileApp'
 import { auth } from '@/lib/auth'
 import { envCollection, getAdminDb } from '@/lib/firebaseAdmin'
-import { resolvePhotoSrc, resolveTeamLogoSrc } from '@/lib/avatar'
+import { resolveCompanionIconSrc, resolvePhotoSrc, resolveRiotIconSrc, resolveTeamLogoSrc } from '@/lib/avatar'
+import { buildRiotRecord } from '@/lib/riotAccount'
+import type { RiotServer } from '@/api/riot/account'
 
 export default async function ProfilePage() {
   const session = await auth()
@@ -15,6 +17,36 @@ export default async function ProfilePage() {
   if (!doc.exists || !rawProfile?.username) redirect('/register')
   const profile = rawProfile
   const discordUrl = process.env.NEXT_PUBLIC_DISCORD_URL ?? ''
+
+  // A link saved while the Riot API key was expired/rejected is marked unverified; silently
+  // retry it here so it heals itself as soon as a working key is in place, with no action
+  // needed from the player. An already-verified link is never re-fetched on page load.
+  let riotData = profile.riot;
+  if (riotData && riotData.verified === false) {
+    const apiKey = process.env.RIOT_API_KEY;
+    if (apiKey) {
+      const retry = await buildRiotRecord(riotData.gameName, riotData.tagLine, riotData.server as RiotServer, apiKey);
+      if ('riot' in retry) {
+        riotData = retry.riot;
+        await db.collection(envCollection('users')).doc(session.user.id).set({ riot: retry.riot }, { merge: true });
+      }
+    }
+  }
+
+  const riot = riotData
+    ? {
+        gameName: riotData.gameName as string,
+        tagLine: riotData.tagLine as string,
+        server: riotData.server as string,
+        tier: (riotData.tier as string) ?? null,
+        rank: (riotData.rank as string) ?? null,
+        lp: (riotData.lp as number) ?? null,
+        verified: riotData.verified !== false,
+        iconURL: resolveRiotIconSrc({ riot: riotData }),
+        companionIconURL: resolveCompanionIconSrc({ riot: riotData }),
+        lastCheckedAt: (riotData.lastCheckedAt as string) ?? null,
+      }
+    : null
 
   let teamName: string | null = null
   let teamCode: string | null = null
@@ -61,6 +93,7 @@ export default async function ProfilePage() {
         teamLogoURL={teamLogoURL}
         members={members}
         currentUserId={session.user.id}
+        riot={riot}
       />
     </>
   )
