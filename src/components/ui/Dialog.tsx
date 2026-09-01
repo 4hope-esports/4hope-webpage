@@ -34,12 +34,12 @@ export function Dialog({ open, title, children, onClose, actions, className, clo
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'w-full max-w-[460px] overflow-hidden rounded-[14px] border border-white/10 bg-ink-800 shadow-[0_24px_60px_rgba(0,0,0,0.4)] box-border',
+          'w-full max-w-[460px] rounded-[14px] border border-white/10 bg-ink-800 shadow-[0_24px_60px_rgba(0,0,0,0.4)] box-border',
           shaking && 'animate-[dialog-shake_0.4s_ease-in-out]',
           className,
         )}
       >
-        <div className="flex items-start justify-between gap-4 px-5.5 pt-5">
+        <div className="flex items-start justify-between gap-4 rounded-t-[14px] px-5.5 pt-5">
           <h3 className="m-0 font-display text-xl font-extrabold tracking-[-0.01em] text-white">{title}</h3>
           {onClose ? (
             <button
@@ -54,7 +54,9 @@ export function Dialog({ open, title, children, onClose, actions, className, clo
         </div>
         <div className="px-5.5 pb-5 pt-3 text-[15px] leading-relaxed text-white/70">{children}</div>
         {actions ? (
-          <div className="flex justify-end gap-2.5 border-t border-white/10 bg-white/[0.02] px-5.5 py-4">{actions}</div>
+          <div className="flex justify-end gap-2.5 rounded-b-[14px] border-t border-white/10 bg-white/[0.02] px-5.5 py-4">
+            {actions}
+          </div>
         ) : null}
       </div>
     </div>
