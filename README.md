@@ -28,6 +28,7 @@ See `.env.example` for the full list of required environment variables (Riot API
 | Branch | Purpose |
 |---|---|
 | `main` | Production-ready code |
+| `dev` | Integration branch |
 | `feature/*` | In-progress feature work |
 
 ## License

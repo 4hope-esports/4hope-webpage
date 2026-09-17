@@ -1,18 +1,35 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { LeaderboardPlayer } from "@/components/data/Leaderboard";
 
 export type LobbyStatus = "open" | "live" | "ended";
 
-export interface LobbyParticipant {
+/**
+ * One record per person in the lobby — the roster entry and the scoreboard
+ * row used to be two separate arrays (`participants[]` + `players[]`)
+ * linked only by a derived id. `isPlayer` now marks board membership
+ * directly on the one record, so there's nothing left to fall out of sync.
+ */
+export interface LobbyPerson {
+  id: string;
   sessionId: string;
+  /** NextAuth session.user.id of the participant — joining requires login, so this is always set on new records. */
+  userId?: string;
   name: string;
   photoURL?: string | null;
+  gameName?: string;
+  tagLine?: string;
+  server?: string;
+  region?: string;
+  /** Contact email, taken from the signed-in account at join time — lets the host reach a participant about their request. */
+  email?: string;
+  /** The host is always "approved" implicitly; everyone else starts "pending" until the host reviews them. */
+  approvalStatus?: "pending" | "approved";
+  /** Whether this person currently has a row on the scoreboard. */
+  isPlayer: boolean;
 }
 
 export interface LeaderboardLobbyState {
-  players: LeaderboardPlayer[];
   roundCount: number;
   scores: Record<string, Record<number, number | null>>;
   order: string[];
@@ -36,12 +53,12 @@ export interface LobbyMeta {
   game?: "League of Legends" | "TFT";
   riotServer?: string | null;
   limit?: number;
-  prizes?: string[];
   description?: string;
+  prizes?: string[];
+  /** Whether the host is seeded as a participant on creation. Defaults to false — the host joins like anyone else, if they want to. */
+  authorParticipates?: boolean;
 }
 
-const WRITE_DEBOUNCE_MS = 400;
-const POLL_INTERVAL_MS = 2000;
 const SESSION_ID_KEY = "4h-leaderboard-session-id";
 
 export function getSessionId(): string {
@@ -66,17 +83,46 @@ type LobbyData =
       authorName?: string;
       authorPhotoURL?: string | null;
       authorSessionId?: string;
-      participants?: LobbyParticipant[];
+      ownerUserId?: string;
+      people?: LobbyPerson[];
       scheduledStartTime?: string | null;
+      game?: LobbyMeta["game"];
+      riotServer?: string | null;
+      limit?: number;
+      description?: string;
+      prizes?: string[];
     })
   | null;
 
-async function fetchLobby(lobbyId: string, editToken: string | null): Promise<LobbyData> {
+const STATE_KEYS = [
+  "roundCount", "scores", "order", "prizeTiers",
+  "rankMode", "showPrize", "cutoffOn", "cutoffRank", "cutoffLabel",
+] as const satisfies readonly (keyof LeaderboardLobbyState)[];
+
+/**
+ * `data` is the raw lobby document — meta, state, and system fields all
+ * flattened together on the wire. Pulling only the real state keys out of it
+ * keeps `state` from picking up stale copies of meta fields (name,
+ * description, ...): those would otherwise get re-broadcast — and overwrite
+ * fresher meta edits — on the next debounced state autosave.
+ */
+function pickState(base: LeaderboardLobbyState, data: LobbyData): LeaderboardLobbyState {
+  const next = { ...base };
+  if (data) {
+    for (const key of STATE_KEYS) {
+      const value = data[key];
+      if (value !== undefined) (next as Record<string, unknown>)[key] = value;
+    }
+  }
+  return next;
+}
+
+async function fetchLobby(lobbyId: string, editToken: string | null): Promise<{ data: LobbyData; isEditor: boolean }> {
   const url = editToken ? `/api/lobby/${lobbyId}?token=${encodeURIComponent(editToken)}` : `/api/lobby/${lobbyId}`;
   const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) return null;
-  const json: { data: LobbyData } = await res.json();
-  return json.data ?? null;
+  if (!res.ok) return { data: null, isEditor: false };
+  const json: { data: LobbyData; isEditor?: boolean } = await res.json();
+  return { data: json.data ?? null, isEditor: Boolean(json.isEditor) };
 }
 
 /**
@@ -94,23 +140,26 @@ export function useLeaderboardLobby(
   defaultState: LeaderboardLobbyState,
 ) {
   const [state, setState] = useState<LeaderboardLobbyState>(defaultState);
+  const [people, setPeople] = useState<LobbyPerson[]>([]);
   const [meta, setMeta] = useState<{
     name: string;
     region: string;
     authorName: string;
     authorPhotoURL: string | null;
     authorSessionId: string;
-    participants: LobbyParticipant[];
+    ownerUserId: string;
     scheduledStartTime: string | null;
+    game?: LobbyMeta["game"];
+    riotServer?: string | null;
+    limit?: number;
+    description?: string;
+    prizes?: string[];
   } | null>(null);
   const [status, setStatus] = useState<LobbyStatus>("open");
   const [loaded, setLoaded] = useState(false);
   const [closed, setClosed] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const closedRef = useRef(false);
-  const skipNextWrite = useRef(false);
-  const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastWritten = useRef<string>("");
 
   const markClosed = () => {
     closedRef.current = true;
@@ -119,15 +168,21 @@ export function useLeaderboardLobby(
   };
 
   const applyData = (data: LobbyData) => {
-    setState((s) => ({ ...defaultState, ...s, ...data }));
+    setState((s) => pickState(s, data));
+    setPeople(data?.people ?? []);
     setMeta({
       name: data?.name ?? "",
       region: data?.region ?? "",
       authorName: data?.authorName ?? "",
       authorPhotoURL: data?.authorPhotoURL ?? null,
       authorSessionId: data?.authorSessionId ?? "",
-      participants: data?.participants ?? [],
+      ownerUserId: data?.ownerUserId ?? "",
       scheduledStartTime: data?.scheduledStartTime ?? null,
+      game: data?.game,
+      riotServer: data?.riotServer,
+      limit: data?.limit,
+      description: data?.description,
+      prizes: data?.prizes,
     });
     if (data?.status) setStatus(data.status);
   };
@@ -135,82 +190,91 @@ export function useLeaderboardLobby(
   useEffect(() => {
     if (!lobbyId) return;
     let cancelled = false;
+    let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
     closedRef.current = false;
     setLoaded(false);
     setClosed(false);
     setCanEdit(false);
 
     const load = async () => {
-      const data = await fetchLobby(lobbyId, editToken);
+      const { data, isEditor } = await fetchLobby(lobbyId, editToken);
       if (cancelled || closedRef.current) return;
       // Even a closed lobby's final data should render — freeze on it rather
       // than discarding it, so viewers can still see the last standings.
-      skipNextWrite.current = true;
-      setState(data ? { ...defaultState, ...data } : defaultState);
+      setState(pickState(defaultState, data));
       applyData(data);
-      setCanEdit(Boolean(editToken) && data != null && !data?.closed);
+      setCanEdit(isEditor && data != null && !data?.closed);
       if (data?.closed) {
         closedRef.current = true;
         setClosed(true);
       }
       setLoaded(true);
+
+      // There's no background job flipping a scheduled lobby's status —
+      // the server only self-heals "open" -> "live" on read (see the GET
+      // handler). Without polling, a tab left open past the scheduled time
+      // would otherwise show a stale "open" lobby forever, so schedule one
+      // re-fetch for exactly when the countdown ends to pick up the flip.
+      if (data?.status === "open" && typeof data.scheduledStartTime === "string") {
+        const delay = new Date(data.scheduledStartTime).getTime() - Date.now();
+        if (Number.isFinite(delay)) {
+          // setTimeout overflows (fires immediately) past ~24.8 days — clamp
+          // and let a distant scheduled time re-check itself periodically.
+          const MAX_DELAY_MS = 12 * 60 * 60 * 1000;
+          scheduleTimer = setTimeout(load, Math.min(Math.max(delay, 0) + 1000, MAX_DELAY_MS));
+        }
+      }
     };
     load();
 
-    const poll = setInterval(async () => {
-      if (cancelled || closedRef.current) {
-        clearInterval(poll);
-        return;
-      }
-      const data = await fetchLobby(lobbyId, editToken);
-      if (cancelled || closedRef.current) return;
-      if (!data) return;
-      const serialized = JSON.stringify(data);
-      if (serialized !== lastWritten.current) {
-        skipNextWrite.current = true;
-        setState({ ...defaultState, ...data });
-      }
-      applyData(data);
-      if (data.closed) {
-        closedRef.current = true;
-        setClosed(true);
-        clearInterval(poll);
-      }
-    }, POLL_INTERVAL_MS);
-
+    // Aside from the scheduled-start re-fetch above, polling stays disabled —
+    // other changes (participants joining, host edits) still need a manual reload.
     return () => {
       cancelled = true;
-      clearInterval(poll);
+      if (scheduleTimer) clearTimeout(scheduleTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId, editToken]);
 
-  useEffect(() => {
-    if (!lobbyId || !loaded || !canEdit || closed) return;
-    if (skipNextWrite.current) {
-      skipNextWrite.current = false;
-      return;
-    }
+  /**
+   * No debounce, no autosave-on-change — a board edit only reaches the server
+   * when this is called (wired to a field's blur / Enter-then-blur). `overrideState`/
+   * `overridePeople` let a caller that just computed a new value synchronously
+   * (e.g. a button handler) save it immediately, without waiting for the next
+   * render to see it via the `state`/`people` closures. Both slices are always
+   * sent together — same last-write-wins semantics the single `state` write
+   * always had.
+   */
+  const flushWrite = (overrideState?: LeaderboardLobbyState, overridePeople?: LobbyPerson[]) => {
+    if (!lobbyId || !loaded || !canEdit || closed || closedRef.current) return;
+    const s = overrideState ?? state;
+    const p = overridePeople ?? people;
+    // Before the lobby starts, the board is just a preview — round scores
+    // entered while testing the setup shouldn't persist, only the actual
+    // configuration (roster, rounds, cutoff, prizes) should.
+    const { scores: _scores, ...rest } = s;
+    void _scores;
+    const outgoingState = status === "open" ? rest : s;
+    const body = JSON.stringify({ state: outgoingState, people: p, sessionId: getSessionId(), editToken });
+    fetch(`/api/lobby/${lobbyId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body,
+    }).catch(() => {});
+  };
 
-    if (writeTimer.current) clearTimeout(writeTimer.current);
-    writeTimer.current = setTimeout(() => {
-      if (closedRef.current) return;
-      const body = JSON.stringify({ state, sessionId: getSessionId(), editToken });
-      lastWritten.current = JSON.stringify(state);
-      fetch(`/api/lobby/${lobbyId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body,
-      }).catch(() => {});
-    }, WRITE_DEBOUNCE_MS);
-    return () => {
-      if (writeTimer.current) clearTimeout(writeTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, loaded, lobbyId, canEdit, closed, editToken]);
+  /** Re-fetches the lobby doc and applies it — used after a join/leave, which the server
+   *  sees but this client otherwise has no way to learn about without polling. */
+  const refetch = async () => {
+    if (!lobbyId) return;
+    const { data, isEditor } = await fetchLobby(lobbyId, editToken);
+    if (!data) return;
+    applyData(data);
+    setCanEdit(isEditor && !data.closed);
+  };
 
   const setLobbyStatus = async (next: LobbyStatus) => {
-    if (!lobbyId || !editToken) return false;
+    if (!lobbyId || !canEdit) return false;
     const res = await fetch(`/api/lobby/${lobbyId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -223,7 +287,24 @@ export function useLeaderboardLobby(
     return res.ok;
   };
 
-  return { state, setState, meta, status, loaded, closed, canEdit, markClosed, setLobbyStatus };
+  const updateMeta = async (
+    patch: Partial<Pick<LobbyMeta, "name" | "region" | "riotServer" | "limit" | "scheduledStartTime" | "description">>,
+  ): Promise<{ ok: true } | { ok: false; error: string | null }> => {
+    if (!lobbyId || !canEdit) return { ok: false, error: "not allowed" };
+    const res = await fetch(`/api/lobby/${lobbyId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meta: patch, sessionId: getSessionId(), editToken }),
+    });
+    if (res.ok) {
+      setMeta((m) => (m ? { ...m, ...patch } : m));
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => null);
+    return { ok: false, error: json?.error ?? null };
+  };
+
+  return { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, markClosed, setLobbyStatus, updateMeta, refetch, flushWrite };
 }
 
 export async function createLobby(
@@ -243,11 +324,43 @@ export async function createLobby(
   return { ok: false, error: json?.error ?? null };
 }
 
-export async function joinLobby(lobbyId: string, sessionId: string, name: string): Promise<boolean> {
+/** Joining requires the caller to be signed in — the server derives identity/email from the session, not the request body. */
+export async function joinLobby(
+  lobbyId: string,
+  sessionId: string,
+  participant: { name: string; gameName?: string; tagLine?: string; server?: string; region?: string },
+): Promise<{ ok: true } | { ok: false; error: string | null }> {
   const res = await fetch(`/api/lobby/${lobbyId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, name }),
+    body: JSON.stringify({ sessionId, ...participant }),
+  });
+  if (res.ok) return { ok: true };
+  const json = await res.json().catch(() => null);
+  return { ok: false, error: json?.error ?? null };
+}
+
+export async function leaveLobby(lobbyId: string, sessionId: string): Promise<boolean> {
+  const res = await fetch(`/api/lobby/${lobbyId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, leave: true }),
+  });
+  return res.ok;
+}
+
+/** Host-only: approve a pending participant, or reject them (and block them from requesting to join again). */
+export async function setParticipantApproval(
+  lobbyId: string,
+  hostSessionId: string,
+  editToken: string | null,
+  targetUserId: string,
+  action: "approve" | "reject",
+): Promise<boolean> {
+  const res = await fetch(`/api/lobby/${lobbyId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: hostSessionId, editToken, targetUserId, action }),
   });
   return res.ok;
 }
@@ -257,4 +370,10 @@ export async function closeLobby(lobbyId: string, editToken: string, authorSessi
     `/api/lobby/${lobbyId}?token=${encodeURIComponent(editToken)}&sessionId=${encodeURIComponent(authorSessionId)}`,
     { method: "DELETE" },
   ).catch(() => {});
+}
+
+/** Permanently deletes a lobby the signed-in caller owns — no edit token needed, the server checks ownerUserId against the session. */
+export async function deleteOwnedLobby(lobbyId: string): Promise<boolean> {
+  const res = await fetch(`/api/lobby/${lobbyId}`, { method: "DELETE" }).catch(() => null);
+  return Boolean(res?.ok);
 }

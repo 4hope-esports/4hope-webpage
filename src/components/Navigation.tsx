@@ -22,7 +22,7 @@ interface NavigationProps {
 const LINKS: NavLink[] = [
   { label: 'Home', href: '/#home' },
   { label: 'Roster', href: '/#roster' },
-  { label: 'Lobbies', href: '/tournament/leaderboard' },
+  { label: 'Lobbies', href: '/lobbies' },
 ]
 
 function DiscordIcon() {

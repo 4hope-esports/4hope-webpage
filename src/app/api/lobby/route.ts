@@ -46,7 +46,8 @@ export async function GET(req: NextRequest) {
         authorName: data.authorName,
         authorPhotoURL: data.authorPhotoURL ?? null,
         scheduledStartTime: data.scheduledStartTime ?? null,
-        participantCount: Array.isArray(data.participants) ? data.participants.length : 0,
+        participantCount: Array.isArray(data.people) ? data.people.length : 0,
+        limit: typeof data.limit === "number" ? data.limit : null,
         createdAt: data.createdAt,
       };
     }),

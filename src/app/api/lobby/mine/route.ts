@@ -14,22 +14,23 @@ export async function GET() {
   const snap = await getAdminDb()
     .collection(envCollection("lobbies"))
     .where("ownerUserId", "==", session.user.id)
-    .orderBy("createdAt", "desc")
     .get();
 
-  const lobbies = snap.docs.map((doc) => {
-    const data = doc.data() as Record<string, unknown>;
-    return {
-      id: doc.id,
-      name: data.name,
-      game: data.game,
-      region: data.region,
-      status: data.status,
-      scheduledStartTime: data.scheduledStartTime ?? null,
-      participantCount: Array.isArray(data.participants) ? data.participants.length : 0,
-      createdAt: data.createdAt,
-    };
-  });
+  const lobbies = snap.docs
+    .map((doc) => {
+      const data = doc.data() as Record<string, unknown>;
+      return {
+        id: doc.id,
+        name: data.name,
+        game: data.game,
+        region: data.region,
+        status: data.status,
+        scheduledStartTime: data.scheduledStartTime ?? null,
+        participantCount: Array.isArray(data.people) ? data.people.length : 0,
+        createdAt: data.createdAt as string,
+      };
+    })
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
   return NextResponse.json({ lobbies });
 }

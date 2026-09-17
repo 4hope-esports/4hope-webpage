@@ -15,10 +15,10 @@ function seedPlayers(): LeaderboardPlayer[] {
   return START_NAMES.map((name, i) => ({ id: nextId(), name, region: START_REGIONS[i] }));
 }
 
+/** Demo/seed data — used only as a transient placeholder before a lobby's real data loads, never persisted. */
 export function defaultLobbyState(): LeaderboardLobbyState {
   const players = seedPlayers();
   return {
-    players,
     roundCount: 8,
     scores: {},
     order: players.map((p) => p.id),
@@ -28,5 +28,25 @@ export function defaultLobbyState(): LeaderboardLobbyState {
     cutoffOn: true,
     cutoffRank: 4,
     cutoffLabel: "QUALIFY TO NEXT STAGE",
+  };
+}
+
+/** Illustrative-only roster shown while previewing an empty, not-yet-started lobby — never persisted. */
+export function previewPlayers(): LeaderboardPlayer[] {
+  return seedPlayers();
+}
+
+/** The real starting state for a newly created lobby — no demo rounds, prizes, or cutoff. */
+export function emptyLobbyState(): LeaderboardLobbyState {
+  return {
+    roundCount: 8,
+    scores: {},
+    order: [],
+    prizeTiers: [],
+    rankMode: "auto",
+    showPrize: false,
+    cutoffOn: false,
+    cutoffRank: 4,
+    cutoffLabel: "",
   };
 }

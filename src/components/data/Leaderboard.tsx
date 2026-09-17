@@ -30,6 +30,12 @@ export interface LeaderboardProps {
   onNameFilterChange?: (value: string) => void;
   regionFilter?: string;
   onRegionFilterChange?: (value: string) => void;
+  /** Autocomplete suggestions offered on the per-row Region input. */
+  regionOptions?: string[];
+  /** Removes one row — a discrete action, so (unlike onPlayersChange edits) the caller is expected to save it immediately rather than wait for a blur. Falls back to onPlayersChange if omitted. */
+  onRemovePlayer?: (id: string) => void;
+  /** Fires on blur of any editable cell — used to commit a pending debounced save right away. */
+  onFieldBlur?: () => void;
   /** Renders all cells/actions inert (no edits, no add/remove) — for a shared view-only link */
   readOnly?: boolean;
   style?: React.CSSProperties;
@@ -37,9 +43,11 @@ export interface LeaderboardProps {
 
 const REGION_COLORS: Record<string, [string, string]> = {
   AMER: ["#7DD3FC", "#04212E"], // blue
+  AMERICAS: ["#7DD3FC", "#04212E"], // blue
   EMEA: ["#86EFAC", "#052E12"], // green
   APAC: ["#C084FC", "#210634"], // purple
   CN:   ["#F2C200", "#1A1300"], // gold
+  GLOBAL: ["#F2C200", "#1A1300"], // gold
 };
 
 const REGION_FALLBACK: [string, string][] = [
@@ -57,6 +65,11 @@ function regionColor(tag: string | undefined): [string, string] {
 
 const mono = "var(--font-mono, 'Roboto Mono', monospace)";
 const COLW = { rank: 40, name: 168, region: 104, total: 74, prize: 104, round: 58 };
+
+/** Enter commits a cell the same way tabbing away does — it just blurs, which fires onBlur/onFieldBlur. */
+function blurOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
+  if (e.key === "Enter") e.currentTarget.blur();
+}
 
 function cellInputStyle(extra?: React.CSSProperties): React.CSSProperties {
   return {
@@ -87,6 +100,9 @@ export function Leaderboard({
   onNameFilterChange,
   regionFilter,
   onRegionFilterChange,
+  regionOptions,
+  onRemovePlayer,
+  onFieldBlur,
   readOnly = false,
   style = {},
 }: LeaderboardProps) {
@@ -138,6 +154,10 @@ export function Leaderboard({
   };
 
   const removePlayer = (pid: string) => {
+    if (onRemovePlayer) {
+      onRemovePlayer(pid);
+      return;
+    }
     if (!onPlayersChange) return;
     onPlayersChange(players.filter((p) => p.id !== pid));
   };
@@ -153,6 +173,13 @@ export function Leaderboard({
 
   return (
     <div style={{ overflowX: "auto", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 12, ...style }}>
+      {regionOptions && regionOptions.length > 0 && (
+        <datalist id="lb-region-options">
+          {regionOptions.map((r) => (
+            <option key={r} value={r} />
+          ))}
+        </datalist>
+      )}
       <div style={{ width: "max-content", minWidth: "100%" }}>
         {/* Header */}
         <div style={{ display: "flex", background: "var(--ink-900)", borderBottom: "1px solid rgba(255,255,255,0.14)", position: "sticky", top: 0, zIndex: 3 }}>
@@ -248,8 +275,10 @@ export function Leaderboard({
                 {/* Name */}
                 <div style={{ width: COLW.name, flex: `0 0 ${COLW.name}px`, padding: "2px 6px", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 6, position: "sticky", left: COLW.rank, background: rowBg, zIndex: 1 }}>
                   <input value={p.name} readOnly={readOnly} onChange={(e) => setPlayer(pid, { name: e.target.value })}
+                    onBlur={onFieldBlur}
+                    onKeyDown={blurOnEnter}
                     style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "#fff", fontFamily: "var(--family-sans, Inter, sans-serif)", fontWeight: 600, fontSize: 12.5 }} />
-                  {!readOnly && onPlayersChange && (
+                  {!readOnly && (onPlayersChange || onRemovePlayer) && (
                     <span onClick={() => removePlayer(pid)} title="Remove player"
                       style={{ cursor: "pointer", color: "rgba(255,255,255,0.55)", display: "flex", flex: "none" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#FCA5A5"; }}
@@ -261,7 +290,10 @@ export function Leaderboard({
 
                 {/* Region */}
                 <div style={{ width: COLW.region, flex: `0 0 ${COLW.region}px`, padding: "5px 8px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", position: "sticky", left: COLW.rank + COLW.name, background: rowBg, zIndex: 1 }}>
-                  <input value={p.region || ""} placeholder="—" readOnly={readOnly} onChange={(e) => setPlayer(pid, { region: e.target.value.toUpperCase().slice(0, 6) })}
+                  <input value={p.region || ""} placeholder="—" readOnly={readOnly} list={regionOptions?.length ? "lb-region-options" : undefined}
+                    onChange={(e) => setPlayer(pid, { region: e.target.value.slice(0, 20) })}
+                    onBlur={onFieldBlur}
+                    onKeyDown={blurOnEnter}
                     style={{ width: "100%", textAlign: "center", background: bg, color: fg, border: "none", outline: "none", borderRadius: 5, fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", padding: "3px 2px" }} />
                 </div>
 
@@ -277,6 +309,8 @@ export function Leaderboard({
                     <div key={r} style={{ width: COLW.round, flex: `0 0 ${COLW.round}px`, boxSizing: "border-box", height: 34, borderRight: "1px solid rgba(255,255,255,0.04)" }}>
                       <input type="number" value={val == null ? "" : val} placeholder="–" readOnly={readOnly}
                         onChange={(e) => setScore(pid, r, e.target.value)}
+                        onBlur={onFieldBlur}
+                    onKeyDown={blurOnEnter}
                         style={cellInputStyle({ fontWeight: val != null ? 700 : 400, cursor: readOnly ? "default" : "text" })} />
                     </div>
                   );
@@ -295,6 +329,8 @@ export function Leaderboard({
                           next[rank - 1] = e.target.value;
                           onPrizeTiersChange(next);
                         }}
+                        onBlur={onFieldBlur}
+                    onKeyDown={blurOnEnter}
                         style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontFamily: mono, fontSize: 11.5, fontWeight: 700, color: prizeTiers[rank - 1] ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.25)", textAlign: "center" }}
                       />
                     ) : (
@@ -309,7 +345,7 @@ export function Leaderboard({
               {/* Cutoff divider */}
               {showCutoffLine && (
                 <div style={{ display: "flex", alignItems: "center", background: "var(--ink-1000)", borderBottom: "1px dashed var(--gold-500)", borderTop: "1px dashed var(--gold-500)" }}>
-                  <div style={{ flex: 1, padding: "3px 10px", fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "var(--gold-500)", textTransform: "uppercase" }}>
+                  <div style={{ flex: 1, padding: "3px 10px", fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "var(--gold-500)", textTransform: "uppercase", textAlign: "center" }}>
                     {cutoffLabel}
                   </div>
                 </div>

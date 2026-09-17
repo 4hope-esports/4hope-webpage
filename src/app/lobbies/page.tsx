@@ -1,17 +1,19 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Search, Plus, Users, Loader2, Clock, X } from "lucide-react";
-import { Avatar, Button, Card, Dialog, FormField, GoldBars, Input, Switch, Tag, Textarea } from "@/components/ui";
+import {
+  Avatar, Button, Card, Dialog, FormField, Input, Tag, Textarea, Tooltip,
+} from "@/components/ui";
 import { createLobby, getSessionId, LobbyMeta } from "@/lib/useLeaderboardLobby";
 import { RIOT_SERVERS, type RiotServer } from "@/api/riot/account";
-import { defaultLobbyState } from "./shared";
+import { defaultLobbyState, emptyLobbyState } from "./shared";
+import { DateTimePicker, LobbyEssentialsFields, GLOBAL_SERVER, regionForServerChoice, type ServerChoice } from "./LobbyFormFields";
 
-const GAMES = ["League of Legends", "TFT"] as const;
-type Game = (typeof GAMES)[number];
-const SORTED_RIOT_SERVERS = [...RIOT_SERVERS].sort((a, b) => a.label.localeCompare(b.label));
+const MIN_SCHEDULE_LEAD_MINUTES = 30;
+const MIN_SCHEDULE_LEAD_MS = MIN_SCHEDULE_LEAD_MINUTES * 60_000;
 
 interface LobbyRow {
   id: string;
@@ -23,20 +25,12 @@ interface LobbyRow {
   authorPhotoURL: string | null;
   scheduledStartTime: string | null;
   participantCount: number;
+  limit: number | null;
   createdAt: string;
 }
 
 const STATUS_SCHEME = { open: "positive", live: "brand", ended: "neutral" } as const;
 const STATUS_LABEL = { open: "OPEN", live: "LIVE", ended: "ENDED" } as const;
-
-function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const min = Math.round(diffMs / 60000);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.round(hr / 24)}d ago`;
-}
 
 function formatScheduledTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -47,8 +41,11 @@ function formatScheduledTime(iso: string): string {
   });
 }
 
+const OPEN_LOBBY_CALLBACK = "/lobbies?openLobbyForm=1";
+
 export default function LeaderboardDirectoryPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session, status: sessionStatus } = useSession();
   const [lobbies, setLobbies] = React.useState<LobbyRow[]>([]);
   const [cursor, setCursor] = React.useState<string | null>(null);
@@ -60,17 +57,21 @@ export default function LeaderboardDirectoryPage() {
   const [createStep, setCreateStep] = React.useState<1 | 2>(1);
   const [creating, setCreating] = React.useState(false);
   const [createError, setCreateError] = React.useState<string | null>(null);
+  const [limitReachedOpen, setLimitReachedOpen] = React.useState(false);
   const [lobbyName, setLobbyName] = React.useState("");
-  const [game, setGame] = React.useState<Game>("TFT");
   const [limit, setLimit] = React.useState("8");
-  const [region, setRegion] = React.useState("");
-  const [riotServer, setRiotServer] = React.useState<RiotServer>("NA");
-  const [scheduled, setScheduled] = React.useState(false);
+  const [serverChoice, setServerChoice] = React.useState<ServerChoice>("");
   const [scheduledAt, setScheduledAt] = React.useState("");
   const [description, setDescription] = React.useState("");
-  const [prizes, setPrizes] = React.useState<string[]>([]);
-  const [prizeInput, setPrizeInput] = React.useState("");
+  const [prizeTiers, setPrizeTiers] = React.useState<string[]>([]);
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
   const sentinelRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!createOpen) return;
+    const interval = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, [createOpen]);
 
   const loadPage = React.useCallback(async (after: string | null) => {
     const url = after ? `/api/lobby?after=${encodeURIComponent(after)}` : "/api/lobby";
@@ -126,46 +127,80 @@ export default function LeaderboardDirectoryPage() {
 
   const openCreate = async () => {
     if (sessionStatus !== "authenticated") {
-      router.push(`/login?callbackUrl=${encodeURIComponent("/tournament/leaderboard")}`);
+      router.push(`/login?callbackUrl=${encodeURIComponent(OPEN_LOBBY_CALLBACK)}`);
       return;
     }
     const profileRes = await fetch("/api/profile/me");
     if (profileRes.status === 401) {
-      router.push(`/login?callbackUrl=${encodeURIComponent("/tournament/leaderboard")}`);
+      router.push(`/login?callbackUrl=${encodeURIComponent(OPEN_LOBBY_CALLBACK)}`);
       return;
     }
     const profileJson = await profileRes.json();
     if (!profileJson.exists) {
-      router.push(`/register?callbackUrl=${encodeURIComponent("/tournament/leaderboard")}`);
+      router.push(`/register?callbackUrl=${encodeURIComponent(OPEN_LOBBY_CALLBACK)}`);
       return;
     }
+    const linkedServer = profileJson.profile?.riot?.server as RiotServer | undefined;
     setCreateError(null);
     setCreateStep(1);
     setLobbyName("");
-    setGame("TFT");
     setLimit("8");
-    setRegion("");
-    setRiotServer("NA");
-    setScheduled(false);
+    setServerChoice(linkedServer && RIOT_SERVERS.some((s) => s.value === linkedServer) ? linkedServer : "LAN");
     setScheduledAt("");
     setDescription("");
-    setPrizes([]);
-    setPrizeInput("");
+    setPrizeTiers([]);
     setCreateOpen(true);
   };
 
-  const addPrize = () => {
-    const value = prizeInput.trim();
-    if (!value) return;
-    setPrizes((p) => [...p, value]);
-    setPrizeInput("");
+  const autoOpenedRef = React.useRef(false);
+  React.useEffect(() => {
+    // sessionStatus is "loading" for a beat on first mount — waiting it out
+    // avoids treating an actually-signed-in user as logged out and bouncing
+    // them straight back to /login.
+    if (sessionStatus === "loading") return;
+    if (searchParams.get("openLobbyForm") !== "1") return;
+    if (autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    // Drop the query param immediately so a refresh/back-nav doesn't reopen the dialog.
+    router.replace("/lobbies");
+    openCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus, searchParams]);
+
+  const ordinal = (n: number) => {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
-  const removePrize = (index: number) => setPrizes((p) => p.filter((_, i) => i !== index));
+
+  const setPrizeAt = (index: number, value: string) => {
+    setPrizeTiers((tiers) => {
+      const next = [...tiers];
+      next[index] = value;
+      return next;
+    });
+  };
+  const addPrizeTier = () =>
+    setPrizeTiers((tiers) => (Number.isFinite(limitNumber) && tiers.length >= limitNumber ? tiers : [...tiers, ""]));
+  const removePrizeTier = (index: number) => setPrizeTiers((tiers) => tiers.filter((_, i) => i !== index));
 
   const limitNumber = Number(limit);
-  const step1Valid = Boolean(lobbyName.trim()) && Boolean(region.trim()) && Number.isFinite(limitNumber) && limitNumber >= 2 && limitNumber <= 200 && (!scheduled || Boolean(scheduledAt));
+  const scheduledAtMs = scheduledAt ? new Date(scheduledAt).getTime() : NaN;
+  // Scheduling is optional — leave the field blank to decide the start time later.
+  const scheduleTooSoon = Boolean(scheduledAt) && (!Number.isFinite(scheduledAtMs) || scheduledAtMs - nowMs < MIN_SCHEDULE_LEAD_MS);
+  const step1Valid =
+    Boolean(lobbyName.trim()) &&
+    Boolean(serverChoice) &&
+    Number.isFinite(limitNumber) &&
+    limitNumber >= 2 &&
+    limitNumber <= 200 &&
+    !scheduleTooSoon;
 
   const goToStep2 = () => {
+    if (scheduleTooSoon) {
+      setCreateError(`Scheduled start must be at least ${MIN_SCHEDULE_LEAD_MINUTES} minutes from now.`);
+      return;
+    }
     if (!step1Valid) {
       setCreateError("Fill in all required fields.");
       return;
@@ -182,7 +217,11 @@ export default function LeaderboardDirectoryPage() {
     }
     if (!step1Valid) {
       setCreateStep(1);
-      setCreateError("Fill in all required fields.");
+      setCreateError(
+        scheduleTooSoon
+          ? `Scheduled start must be at least ${MIN_SCHEDULE_LEAD_MINUTES} minutes from now.`
+          : "Fill in all required fields.",
+      );
       return;
     }
     setCreating(true);
@@ -190,16 +229,16 @@ export default function LeaderboardDirectoryPage() {
 
     const profileRes = await fetch("/api/profile/me");
     if (profileRes.status === 401) {
-      router.push(`/login?callbackUrl=${encodeURIComponent("/tournament/leaderboard")}`);
+      router.push(`/login?callbackUrl=${encodeURIComponent("/lobbies")}`);
       return;
     }
     const profileJson = await profileRes.json();
     if (!profileJson.exists) {
-      router.push(`/register?callbackUrl=${encodeURIComponent("/tournament/leaderboard")}`);
+      router.push(`/register?callbackUrl=${encodeURIComponent("/lobbies")}`);
       return;
     }
     if (!session?.user?.id) {
-      router.push(`/login?callbackUrl=${encodeURIComponent("/tournament/leaderboard")}`);
+      router.push(`/login?callbackUrl=${encodeURIComponent("/lobbies")}`);
       return;
     }
 
@@ -208,30 +247,36 @@ export default function LeaderboardDirectoryPage() {
     const lobbyId = crypto.randomUUID();
     // datetime-local has no timezone; new Date() interprets it in the browser's
     // local zone, and toISOString() below then carries that as a UTC offset.
-    const scheduledStartTime = scheduled && scheduledAt ? new Date(scheduledAt).toISOString() : null;
+    const scheduledStartTime = scheduledAt ? new Date(scheduledAt).toISOString() : null;
     const meta: LobbyMeta = {
       name: lobbyName.trim(),
-      region: region.trim(),
+      region: regionForServerChoice(serverChoice),
       authorName: profileJson.profile.displayName,
       authorPhotoURL: profileJson.profile.photoURL ?? null,
       scheduledStartTime,
       ownerUserId: session.user.id,
-      game,
-      riotServer,
+      game: "TFT",
+      riotServer: serverChoice === GLOBAL_SERVER ? null : serverChoice || null,
       limit: limitNumber,
-      prizes,
       description: description.trim(),
     };
-    const result = await createLobby(lobbyId, editToken, sessionId, meta, defaultLobbyState());
+    const trimmedTiers = prizeTiers.map((t) => t.trim());
+    const hasPrizes = trimmedTiers.some((t) => t.length > 0);
+    const state = {
+      ...emptyLobbyState(),
+      ...(hasPrizes ? { prizeTiers: trimmedTiers, showPrize: true } : {}),
+    };
+    const result = await createLobby(lobbyId, editToken, sessionId, meta, state);
     if (result.ok) {
-      router.push(`/tournament/leaderboard/${lobbyId}?token=${editToken}`);
+      router.push(`/lobbies/${lobbyId}?token=${editToken}`);
       return;
     }
-    setCreateError(
-      result.error === "LIMIT_REACHED"
-        ? "You already have 3 open lobbies — end or close one before opening another."
-        : "Could not create the lobby. Please try again.",
-    );
+    if (result.error === "LIMIT_REACHED") {
+      setCreateOpen(false);
+      setLimitReachedOpen(true);
+    } else {
+      setCreateError("Could not create the lobby. Please try again.");
+    }
     setCreating(false);
   };
 
@@ -256,7 +301,7 @@ export default function LeaderboardDirectoryPage() {
         </div>
       </div>
 
-      <div className="border-b border-white/8 bg-ink-900">
+      <div className="sticky top-0 z-10 border-b border-white/8 bg-ink-900">
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-3 px-5 py-4 sm:px-9">
           <div className="min-w-0 flex-1 basis-full sm:basis-[320px]">
             <Input
@@ -277,7 +322,6 @@ export default function LeaderboardDirectoryPage() {
       </div>
 
       <div className="relative mx-auto max-w-[1200px] px-5 py-2 pb-12 sm:px-9">
-        <GoldBars />
         {loadingInitial ? (
           <div className="relative z-10 flex items-center gap-2 py-16 justify-center font-mono text-xs text-white/50">
             <Loader2 size={16} className="animate-spin" /> LOADING…
@@ -332,60 +376,24 @@ export default function LeaderboardDirectoryPage() {
         <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-white/40">
           Step {createStep} of 2 — {createStep === 1 ? "the essentials" : "optional details"}
         </div>
-        <form id="create-lobby-form" onSubmit={submitCreate} className="flex flex-col gap-4">
+        <form id="create-lobby-form" onSubmit={submitCreate} className="flex flex-col gap-3.5">
           {createStep === 1 ? (
             <>
-              <FormField label="Lobby name" required>
-                <Input value={lobbyName} onChange={(e) => setLobbyName(e.target.value)} placeholder="e.g. Sunday night 5-stack" maxLength={80} />
+              <LobbyEssentialsFields
+                name={lobbyName}
+                onNameChange={setLobbyName}
+                limit={limit}
+                onLimitChange={setLimit}
+                server={serverChoice}
+                onServerChange={setServerChoice}
+              />
+              <FormField
+                label="Event date & time"
+                hint="Optional — leave blank to decide later."
+                error={scheduleTooSoon ? `Pick a time at least ${MIN_SCHEDULE_LEAD_MINUTES} minutes from now.` : undefined}
+              >
+                <DateTimePicker value={scheduledAt} onChange={setScheduledAt} />
               </FormField>
-              <div className="flex gap-3">
-                <FormField label="Game" required className="flex-1">
-                  <select
-                    value={game}
-                    onChange={(e) => setGame(e.target.value as Game)}
-                    className="h-[42px] w-full rounded-lg border border-white/15 bg-ink-900 px-3.5 text-[15px] text-white outline-none focus:border-gold-500 focus:ring-[3px] focus:ring-gold-500/26"
-                  >
-                    {GAMES.map((g) => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </FormField>
-                <FormField label="Participant limit" required className="w-32 shrink-0">
-                  <Input
-                    type="number"
-                    min={2}
-                    max={200}
-                    value={limit}
-                    onChange={(e) => setLimit(e.target.value)}
-                  />
-                </FormField>
-              </div>
-              <div className="flex gap-3">
-                <FormField label="Region" required className="flex-1">
-                  <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="e.g. AMER" maxLength={40} />
-                </FormField>
-                <FormField label="Riot server" required className="flex-1">
-                  <select
-                    value={riotServer}
-                    onChange={(e) => setRiotServer(e.target.value as RiotServer)}
-                    className="h-[42px] w-full rounded-lg border border-white/15 bg-ink-900 px-3.5 text-[15px] text-white outline-none focus:border-gold-500 focus:ring-[3px] focus:ring-gold-500/26"
-                  >
-                    {SORTED_RIOT_SERVERS.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
-                </FormField>
-              </div>
-              <Switch checked={scheduled} onChange={setScheduled} label="Schedule this lobby" />
-              {scheduled ? (
-                <FormField label="Starts at" hint="Shown in your local time.">
-                  <Input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={(e) => setScheduledAt(e.target.value)}
-                  />
-                </FormField>
-              ) : null}
             </>
           ) : (
             <>
@@ -398,47 +406,69 @@ export default function LeaderboardDirectoryPage() {
                   rows={4}
                 />
               </FormField>
-              <FormField label="Prizes" hint="Optional — add one or more prizes.">
-                <div className="flex gap-2">
-                  <Input
-                    value={prizeInput}
-                    onChange={(e) => setPrizeInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addPrize();
-                      }
-                    }}
-                    placeholder="e.g. $100 gift card"
-                    maxLength={40}
-                    className="flex-1"
-                  />
-                  <Button type="button" variant="subtle" size="md" onClick={addPrize}>
-                    Add
+              <FormField
+                label="Prizes"
+                hint={`Optional — set a prize for each finishing place (up to ${Number.isFinite(limitNumber) && limitNumber > 0 ? limitNumber : "capacity"}).`}
+              >
+                <div className="flex flex-col gap-2">
+                  {prizeTiers.map((tier, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="w-14 shrink-0 font-mono text-xs text-white/50">{ordinal(i + 1)}</span>
+                      <Input
+                        value={tier}
+                        onChange={(e) => setPrizeAt(i, e.target.value)}
+                        placeholder="e.g. $100 gift card"
+                        maxLength={40}
+                        className="flex-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePrizeTier(i)}
+                        aria-label={`Remove ${ordinal(i + 1)} place prize`}
+                        className="inline-flex shrink-0 rounded-full p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    size="sm"
+                    onClick={addPrizeTier}
+                    disabled={Number.isFinite(limitNumber) && prizeTiers.length >= limitNumber}
+                    className="self-start"
+                  >
+                    Add a place
                   </Button>
                 </div>
-                {prizes.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {prizes.map((p, i) => (
-                      <Tag key={i} scheme="neutral" size="sm" className="gap-1.5 pr-1.5">
-                        {p}
-                        <button
-                          type="button"
-                          onClick={() => removePrize(i)}
-                          aria-label={`Remove ${p}`}
-                          className="inline-flex rounded-full p-0.5 hover:bg-white/15"
-                        >
-                          <X size={11} />
-                        </button>
-                      </Tag>
-                    ))}
-                  </div>
-                ) : null}
               </FormField>
             </>
           )}
           {createError ? <p className="text-sm text-red-400">{createError}</p> : null}
         </form>
+      </Dialog>
+
+      <Dialog
+        open={limitReachedOpen}
+        title="You've reached the lobby limit"
+        onClose={() => setLimitReachedOpen(false)}
+        actions={
+          <>
+            <Button variant="subtle" size="md" onClick={() => setLimitReachedOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => router.push("/profile?tab=Overview")}
+            >
+              Go to My Lobbies
+            </Button>
+          </>
+        }
+      >
+        You already have 3 open lobbies. End or delete one from your profile before opening another.
       </Dialog>
     </div>
   );
@@ -449,33 +479,52 @@ function LobbyListRow({ lobby }: { lobby: LobbyRow }) {
   return (
     <Card
       tone="arena"
-      className="mb-3 flex cursor-pointer flex-wrap items-center gap-4 p-4 transition-colors hover:border-gold-500/40"
-      onClick={() => router.push(`/tournament/leaderboard/${lobby.id}`)}
+      className="mb-3 flex cursor-pointer flex-wrap items-center gap-4 p-4 transition-colors hover:border-gold-500/40 sm:flex-nowrap"
+      onClick={() => router.push(`/lobbies/${lobby.id}`)}
     >
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="font-display text-[17px] font-extrabold tracking-[-0.01em] text-white">{lobby.name}</span>
-          <Tag scheme={STATUS_SCHEME[lobby.status]} size="sm">
+      <div className="relative hidden h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-ink-800 sm:flex">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/clover-mark.png" alt="" className="h-9 w-9 opacity-30" />
+        <span className="absolute inset-0 flex items-center justify-center text-center font-display text-[9px] font-black uppercase tracking-[0.02em] text-gold-500">
+          {lobby.game}
+        </span>
+      </div>
+      <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+        <div className="mb-1 flex flex-nowrap items-center gap-2">
+          <Tooltip label={lobby.name} className="min-w-0">
+            <span className="block truncate font-display text-[17px] font-extrabold tracking-[-0.01em] text-white">{lobby.name}</span>
+          </Tooltip>
+          <Tag scheme={STATUS_SCHEME[lobby.status]} variant={lobby.status === "live" ? "solid" : "subtle"} size="sm" className="shrink-0">
             {STATUS_LABEL[lobby.status]}
           </Tag>
           {lobby.status === "open" && lobby.scheduledStartTime ? (
-            <Tag scheme="brand" size="sm">
+            <Tag scheme="brand" size="sm" className="hidden shrink-0 sm:inline-flex">
               <Clock size={11} /> {formatScheduledTime(lobby.scheduledStartTime)}
             </Tag>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-3.5 font-mono text-[11.5px] text-white/55">
+        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 font-mono text-[11.5px] text-white/55">
           <span className="flex items-center gap-1.5">
             <Avatar src={lobby.authorPhotoURL} name={lobby.authorName} size="xs" /> {lobby.authorName}
           </span>
+          <span>{lobby.game}</span>
           <span>{lobby.region}</span>
           <span className="flex items-center gap-1">
-            <Users size={13} /> {lobby.participantCount}
+            <Users size={13} /> {lobby.participantCount}{lobby.limit ? `/${lobby.limit}` : ""}
           </span>
-          <span>{timeAgo(lobby.createdAt)}</span>
+          {lobby.status === "open" && lobby.scheduledStartTime ? (
+            <span className="sm:hidden">Starts {formatScheduledTime(lobby.scheduledStartTime)}</span>
+          ) : (
+            <span>Starts {lobby.scheduledStartTime ? formatScheduledTime(lobby.scheduledStartTime) : "TBD"}</span>
+          )}
         </div>
       </div>
-      <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); router.push(`/tournament/leaderboard/${lobby.id}`); }}>
+      <Button
+        variant="primary"
+        size="sm"
+        className="w-full justify-center sm:w-auto"
+        onClick={(e) => { e.stopPropagation(); router.push(`/lobbies/${lobby.id}`); }}
+      >
         View lobby
       </Button>
     </Card>

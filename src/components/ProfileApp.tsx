@@ -25,7 +25,7 @@ import { CropDialog, useImageCropFlow } from '@/components/ImageCropFlow'
 import { MyLobbiesCard } from '@/components/MyLobbiesCard'
 import { postJson, requestJson } from '@/lib/api'
 import { defaultTeamCode, isValidTeamCode, normalizeTeamName } from '@/lib/team'
-import { RIOT_SERVERS, type RiotServer } from '@/api/riot/account'
+import { RIOT_SERVERS, regionForServer, type RiotServer } from '@/api/riot/account'
 
 interface TeamMember {
   id: string
@@ -902,10 +902,6 @@ function formatCooldown(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
-}
-
-function regionForServer(server: string): string {
-  return RIOT_SERVERS.find((s) => s.value === server)?.routingRegion ?? ''
 }
 
 function ServerSelect({ value, onChange }: { value: RiotServer; onChange: (server: RiotServer) => void }) {

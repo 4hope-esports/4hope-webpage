@@ -26,6 +26,18 @@ function routingRegionFor(server: RiotServer): string {
   return RIOT_SERVERS.find((s) => s.value === server)!.routingRegion;
 }
 
+const ROUTING_REGION_TO_LABEL: Record<string, string> = {
+  americas: "Americas",
+  europe: "EMEA",
+  asia: "APAC",
+};
+
+/** Which display region (Americas/EMEA/APAC) a given Riot server belongs to — the single source of truth, used both client- and server-side so it can't drift out of sync with a per-file copy. */
+export function regionForServer(server: string): string {
+  const entry = RIOT_SERVERS.find((s) => s.value === server);
+  return entry ? ROUTING_REGION_TO_LABEL[entry.routingRegion] ?? "" : "";
+}
+
 interface TftMatchParticipant {
   puuid: string;
   companion?: { content_ID: string };
