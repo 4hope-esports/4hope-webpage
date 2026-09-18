@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Search, Plus, Users, Loader2, Clock, X } from "lucide-react";
@@ -44,6 +44,14 @@ function formatScheduledTime(iso: string): string {
 const OPEN_LOBBY_CALLBACK = "/lobbies?openLobbyForm=1";
 
 export default function LeaderboardDirectoryPage() {
+  return (
+    <Suspense fallback={null}>
+      <LeaderboardDirectory />
+    </Suspense>
+  );
+}
+
+function LeaderboardDirectory() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status: sessionStatus } = useSession();
