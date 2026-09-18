@@ -173,6 +173,27 @@ export function Leaderboard({
 
   return (
     <div style={{ overflowX: "auto", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 12, ...style }}>
+      {/* Below ~640px, only Rank + Name stay pinned — Region/Pts/Prize joining
+          the horizontal scroll (instead of all four crowding the sticky-left
+          band) is what actually leaves room to see the round columns. */}
+      <style>{`
+        @media (max-width: 640px) {
+          .lb-col-name {
+            width: 140px !important;
+            flex: 0 0 140px !important;
+            min-width: 140px !important;
+          }
+          .lb-col-region, .lb-col-total, .lb-col-prize {
+            position: static !important;
+            left: auto !important;
+            right: auto !important;
+            /* Flex items respect z-index even at position:static, so without
+               this these columns (later in DOM order) paint over the still-
+               sticky Rank/Name cells instead of scrolling behind them. */
+            z-index: 0 !important;
+          }
+        }
+      `}</style>
       {regionOptions && regionOptions.length > 0 && (
         <datalist id="lb-region-options">
           {regionOptions.map((r) => (
@@ -186,7 +207,7 @@ export function Leaderboard({
           <div style={{ ...headCell(COLW.rank), position: "sticky", left: 0, background: stickyBg, zIndex: 2 }}>#</div>
 
           {/* Name header */}
-          <div style={{ ...headCell(COLW.name, { textAlign: "left" }), position: "sticky", left: COLW.rank, background: stickyBg, zIndex: 2, display: "flex", alignItems: "center", gap: 6 }}>
+          <div className="lb-col-name" style={{ ...headCell(COLW.name, { textAlign: "left" }), position: "sticky", left: COLW.rank, background: stickyBg, zIndex: 2, display: "flex", alignItems: "center", gap: 6 }}>
             {onNameFilterChange && nameFilterOpen ? (
               <>
                 <input autoFocus value={nameFilter || ""} onChange={(e) => onNameFilterChange(e.target.value)} placeholder="Search name…"
@@ -208,7 +229,7 @@ export function Leaderboard({
           </div>
 
           {/* Region header */}
-          <div style={{ ...headCell(COLW.region), position: "sticky", left: COLW.rank + COLW.name, background: stickyBg, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+          <div className="lb-col-region" style={{ ...headCell(COLW.region), position: "sticky", left: COLW.rank + COLW.name, background: stickyBg, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
             {onRegionFilterChange && regionFilterOpen ? (
               <>
                 <input autoFocus value={regionFilter || ""} onChange={(e) => onRegionFilterChange(e.target.value)} placeholder="Search region…"
@@ -229,7 +250,7 @@ export function Leaderboard({
             )}
           </div>
 
-          <div style={{ ...headCell(COLW.total), position: "sticky", left: COLW.rank + COLW.name + COLW.region, background: stickyBg, zIndex: 2, color: "var(--gold-500)" }}>Pts</div>
+          <div className="lb-col-total" style={{ ...headCell(COLW.total), position: "sticky", left: COLW.rank + COLW.name + COLW.region, background: stickyBg, zIndex: 2, color: "var(--gold-500)" }}>Pts</div>
 
           {Array.from({ length: roundCount }).map((_, r) => (
             <div key={r} style={{ ...headCell(COLW.round), position: "relative" }}>
@@ -242,7 +263,7 @@ export function Leaderboard({
           ))}
 
           {showPrize && (
-            <div style={{ ...headCell(COLW.prize), position: "sticky", right: 0, background: stickyBg, zIndex: 2, borderRight: "none", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>Prize</div>
+            <div className="lb-col-prize" style={{ ...headCell(COLW.prize), position: "sticky", right: 0, background: stickyBg, zIndex: 2, borderRight: "none", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>Prize</div>
           )}
         </div>
 
@@ -273,7 +294,7 @@ export function Leaderboard({
                 </div>
 
                 {/* Name */}
-                <div style={{ width: COLW.name, flex: `0 0 ${COLW.name}px`, padding: "2px 6px", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 6, position: "sticky", left: COLW.rank, background: rowBg, zIndex: 1 }}>
+                <div className="lb-col-name" style={{ width: COLW.name, flex: `0 0 ${COLW.name}px`, padding: "2px 6px", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 6, position: "sticky", left: COLW.rank, background: rowBg, zIndex: 1 }}>
                   <input value={p.name} readOnly={readOnly} onChange={(e) => setPlayer(pid, { name: e.target.value })}
                     onBlur={onFieldBlur}
                     onKeyDown={blurOnEnter}
@@ -289,7 +310,7 @@ export function Leaderboard({
                 </div>
 
                 {/* Region */}
-                <div style={{ width: COLW.region, flex: `0 0 ${COLW.region}px`, padding: "5px 8px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", position: "sticky", left: COLW.rank + COLW.name, background: rowBg, zIndex: 1 }}>
+                <div className="lb-col-region" style={{ width: COLW.region, flex: `0 0 ${COLW.region}px`, padding: "5px 8px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", position: "sticky", left: COLW.rank + COLW.name, background: rowBg, zIndex: 1 }}>
                   <input value={p.region || ""} placeholder="—" readOnly={readOnly} list={regionOptions?.length ? "lb-region-options" : undefined}
                     onChange={(e) => setPlayer(pid, { region: e.target.value.slice(0, 20) })}
                     onBlur={onFieldBlur}
@@ -298,7 +319,7 @@ export function Leaderboard({
                 </div>
 
                 {/* Total */}
-                <div style={{ width: COLW.total, flex: `0 0 ${COLW.total}px`, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 13.5, fontWeight: 700, color: "var(--gold-500)", position: "sticky", left: COLW.rank + COLW.name + COLW.region, background: rowBg, zIndex: 1 }}>
+                <div className="lb-col-total" style={{ width: COLW.total, flex: `0 0 ${COLW.total}px`, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 13.5, fontWeight: 700, color: "var(--gold-500)", position: "sticky", left: COLW.rank + COLW.name + COLW.region, background: rowBg, zIndex: 1 }}>
                   {total(pid)}
                 </div>
 
@@ -318,7 +339,7 @@ export function Leaderboard({
 
                 {/* Prize */}
                 {showPrize && (
-                  <div style={{ width: COLW.prize, flex: `0 0 ${COLW.prize}px`, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", position: "sticky", right: 0, background: rowBg, zIndex: 1, borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div className="lb-col-prize" style={{ width: COLW.prize, flex: `0 0 ${COLW.prize}px`, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", position: "sticky", right: 0, background: rowBg, zIndex: 1, borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
                     {!readOnly && onPrizeTiersChange ? (
                       <input
                         value={prizeTiers[rank - 1] || ""}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, Loader2, Trash2, Plus, Pencil } from 'lucide-react'
+import { Users, Loader2, Trash2, Plus, Pencil, Eye } from 'lucide-react'
 import { Button, Card, Dialog, Divider, IconButton, Tag, Tooltip } from '@/components/ui'
 import { deleteOwnedLobby } from '@/lib/useLeaderboardLobby'
 
@@ -103,13 +103,17 @@ export function MyLobbiesCard() {
                   {lobby.game} · {lobby.region} · {lobby.participantCount} participant{lobby.participantCount === 1 ? '' : 's'}
                 </div>
               </button>
-              <Tooltip label="Edit lobby">
+              <Tooltip label={lobby.status === 'open' ? 'Edit lobby' : 'View lobby'}>
                 <IconButton
-                  icon={<Pencil size={16} />}
+                  icon={lobby.status === 'open' ? <Pencil size={16} /> : <Eye size={16} />}
                   variant="subtle"
-                  aria-label={`Edit ${lobby.name}`}
+                  aria-label={lobby.status === 'open' ? `Edit ${lobby.name}` : `View ${lobby.name}`}
                   className="text-white/60 hover:text-white"
-                  onClick={() => router.push(`/lobbies/${lobby.id}?edit=1`)}
+                  onClick={() =>
+                    router.push(
+                      lobby.status === 'open' ? `/lobbies/${lobby.id}?edit=1` : `/lobbies/${lobby.id}`,
+                    )
+                  }
                 />
               </Tooltip>
               <Tooltip label="Delete lobby">

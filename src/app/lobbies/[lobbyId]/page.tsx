@@ -11,7 +11,7 @@ import { Avatar, Button, Card, Dialog, Divider, FormField, Input, LoadingScreen,
 import { useToast } from "@/components/ui/ToastProvider";
 import { Leaderboard } from "@/components/data/Leaderboard";
 import {
-  useLeaderboardLobby, LeaderboardLobbyState, LobbyPerson, getSessionId, closeLobby, deleteOwnedLobby,
+  useLeaderboardLobby, LeaderboardLobbyState, LobbyPerson, getSessionId,
   joinLobby, leaveLobby, setParticipantApproval,
 } from "@/lib/useLeaderboardLobby";
 import { type RiotServer } from "@/api/riot/account";
@@ -24,7 +24,7 @@ import {
 const REGION_SUGGESTIONS = ["Americas", "APAC", "EMEA", "Global"];
 
 const STATUS_SCHEME = { open: "positive", live: "brand", ended: "neutral" } as const;
-const STATUS_LABEL = { open: "OPEN", live: "LIVE", ended: "CLOSED — FINAL" } as const;
+const STATUS_LABEL = { open: "OPEN", live: "LIVE", ended: "ENDED" } as const;
 
 function MetaItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
@@ -69,7 +69,6 @@ export default function LeaderboardLobbyPage() {
 
   const { showToast } = useToast();
   const [copied, setCopied] = React.useState<"edit" | "view" | null>(null);
-  const [lobbyIdCopied, setLobbyIdCopied] = React.useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
   const [closing, setClosing] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
@@ -97,7 +96,7 @@ export default function LeaderboardLobbyPage() {
   const [leavingInFlight, setLeavingInFlight] = React.useState(false);
   const [leaveError, setLeaveError] = React.useState<string | null>(null);
 
-  const { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, markClosed, setLobbyStatus, updateMeta, refetch, flushWrite } = useLeaderboardLobby(
+  const { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, setLobbyStatus, updateMeta, refetch, flushWrite } = useLeaderboardLobby(
     lobbyId, editToken, React.useMemo(defaultLobbyState, []),
   );
   const {
@@ -106,15 +105,30 @@ export default function LeaderboardLobbyPage() {
   } = state;
 
   // The loading screen is a deliberate brand moment (spinner + rotating tip),
-  // not just a spinner while we wait on the network — so it always stays up
-  // at least this long, even when the fetch resolves instantly.
+  // not just a spinner while we wait on the network — so it stays up at least
+  // this long, even when the fetch resolves instantly. But that's only worth
+  // doing once per tab session — a host repeatedly jumping back into a live
+  // lobby shouldn't eat a forced 3s wait every single time.
   const MIN_LOADING_SCREEN_MS = 3000;
-  const [minLoadingElapsed, setMinLoadingElapsed] = React.useState(false);
+  const LOADING_SCREEN_SEEN_KEY = "4hope:lobbyLoadingSeen";
+  const [minLoadingElapsed, setMinLoadingElapsed] = React.useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return sessionStorage.getItem(LOADING_SCREEN_SEEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   React.useEffect(() => {
-    setMinLoadingElapsed(false);
-    const t = setTimeout(() => setMinLoadingElapsed(true), MIN_LOADING_SCREEN_MS);
+    if (minLoadingElapsed) return;
+    const t = setTimeout(() => {
+      setMinLoadingElapsed(true);
+      try {
+        sessionStorage.setItem(LOADING_SCREEN_SEEN_KEY, "1");
+      } catch {}
+    }, MIN_LOADING_SCREEN_MS);
     return () => clearTimeout(t);
-  }, [lobbyId]);
+  }, [lobbyId, minLoadingElapsed]);
   const showLoadingScreen = !loaded || !minLoadingElapsed;
 
   // Text-field edits (name/region/score cells, cutoff label, ...) only save on
@@ -222,22 +236,15 @@ export default function LeaderboardLobbyPage() {
     setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
   };
 
-  const copyLobbyId = () => {
-    navigator.clipboard?.writeText(lobbyId);
-    setLobbyIdCopied(true);
-    setTimeout(() => setLobbyIdCopied(false), 1500);
-  };
-
   const confirmDisableSharing = async () => {
     if (!canEdit) return;
     setClosing(true);
-    markClosed();
-    if (editToken) {
-      await closeLobby(lobbyId, editToken, getSessionId());
-    } else {
-      await deleteOwnedLobby(lobbyId);
-    }
-    router.push("/lobbies");
+    // Ending a lobby freezes it in place — it stays visible (read-only) to
+    // anyone with the link. It is never deleted here; deleting only happens
+    // from the owner's profile ("Delete lobby"), which is a separate, explicit action.
+    await setLobbyStatus("ended");
+    setClosing(false);
+    setConfirmCloseOpen(false);
   };
 
   const startLobby = async () => {
@@ -397,16 +404,26 @@ export default function LeaderboardLobbyPage() {
     setEditSaving(false);
   };
 
+  // Only toast when the lobby actually transitions to closed during this
+  // visit (the host just ended it, or a background refetch picked it up) —
+  // not every time someone opens a lobby that was already closed before
+  // they got here.
+  const closedSeenRef = React.useRef<{ lobbyId: string; seenInitialLoad: boolean }>({ lobbyId: "", seenInitialLoad: false });
   React.useEffect(() => {
+    if (!loaded) return;
+    if (closedSeenRef.current.lobbyId !== lobbyId) {
+      closedSeenRef.current = { lobbyId, seenInitialLoad: true };
+      return;
+    }
     if (closed) {
       showToast({
-        title: "This lobby is closed.",
+        title: "This lobby has ended.",
         message: "The leaderboard is final and will no longer update.",
         type: "warning",
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closed]);
+  }, [closed, loaded, lobbyId]);
 
   const readOnly = !canEdit;
   const isOpenPhase = status === "open";
@@ -415,13 +432,6 @@ export default function LeaderboardLobbyPage() {
   // players/rounds, cutoff line) any time, a non-host viewer only once the
   // lobby is live or ended (there's nothing to see on the board before that).
   const [showScoreboard, setShowScoreboard] = React.useState(() => searchParams.get("view") === "board");
-  // Jump the host onto the board the moment the lobby goes live (or on load,
-  // if it's already live) — but only that once. Using this as the initial
-  // value directly (rather than forcing it into `showingBoard` below on every
-  // render) is what lets "Back to lobby info" actually stick afterward.
-  React.useEffect(() => {
-    if (isAuthor && !isOpenPhase) setShowScoreboard(true);
-  }, [isAuthor, isOpenPhase]);
   const showingBoard = showScoreboard;
 
   // No live sync — someone else's score edit only shows up here on a
@@ -486,7 +496,7 @@ export default function LeaderboardLobbyPage() {
   const confirmCloseModal = (
     <Dialog
       open={confirmCloseOpen}
-      title="Stop sharing this lobby?"
+      title={status === "live" ? "End this lobby?" : "Stop sharing this lobby?"}
       onClose={closing ? undefined : () => setConfirmCloseOpen(false)}
       actions={
         <>
@@ -494,24 +504,24 @@ export default function LeaderboardLobbyPage() {
             Cancel
           </Button>
           <Button variant="primary" onClick={confirmDisableSharing} disabled={closing} className="flex-1 justify-center">
-            {closing ? "Closing…" : "Stop sharing"}
+            {closing ? "Ending…" : status === "live" ? "End lobby" : "Stop sharing"}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-3.5">
         <p className="m-0 font-mono text-xs leading-relaxed text-white/50">
-          Once closed, this lobby can&apos;t be reopened or edited again — the leaderboard freezes as-is for anyone with the link.
+          Once ended, this lobby can&apos;t be reopened or edited again — the leaderboard freezes as-is for anyone with the link. It stays visible until you delete it from your profile.
         </p>
         <div className="flex gap-2">
           <input
             readOnly
-            value={lobbyId}
+            value={viewLink}
             onFocus={(e) => e.currentTarget.select()}
             className="min-w-0 flex-1 rounded-[7px] border border-white/15 bg-ink-700 px-3 py-2 text-center font-mono text-[13px] font-bold tracking-[0.1em] text-white outline-none"
           />
-          <Button variant="subtle" size="sm" iconLeft={lobbyIdCopied ? <Check size={13} /> : undefined} onClick={copyLobbyId}>
-            {lobbyIdCopied ? "Copied!" : "Copy"}
+          <Button variant="subtle" size="sm" iconLeft={copied === "view" ? <Check size={13} /> : undefined} onClick={() => copyLink("view")}>
+            {copied === "view" ? "Copied!" : "Copy"}
           </Button>
         </div>
       </div>
@@ -639,7 +649,7 @@ export default function LeaderboardLobbyPage() {
       ) : (
         <p className="m-0 flex items-center gap-2 text-sm text-white/62">
           <Lock size={14} className="shrink-0 text-gold-500" />
-          Lobby details lock once the lobby starts — this one&apos;s {status === "live" ? "live" : "closed"} now.
+          Lobby details lock once the lobby starts — this one&apos;s {status === "live" ? "live" : "ended"} now.
         </p>
       )}
     </Dialog>
@@ -655,7 +665,7 @@ export default function LeaderboardLobbyPage() {
         .lobby-desc ul{margin:0 0 10px 18px;padding:0}
       `}</style>
       {showLoadingScreen ? (
-        <LoadingScreen variant={meta?.game === "TFT" ? "TFT" : "Match loading"} title="LOADING LOBBY" />
+        <LoadingScreen variant={meta?.game === "TFT" ? "TFT" : "Match loading"} title="LOADING LOBBY" showPercent={false} />
       ) : !showingBoard ? (
         <div className="mx-auto max-w-[900px] px-4 py-6 sm:px-9">
           <button
@@ -711,7 +721,11 @@ export default function LeaderboardLobbyPage() {
                   <div className="lobby-desc text-sm leading-relaxed text-white/72" dangerouslySetInnerHTML={{ __html: meta.description }} />
                 ) : (
                   <p className="m-0 text-sm leading-relaxed text-white/62">
-                    The leaderboard unlocks once {meta?.authorName || "the host"} starts the lobby. Join now to be on the list.
+                    {isOpenPhase
+                      ? `The leaderboard unlocks once ${meta?.authorName || "the host"} starts the lobby. Join now to be on the list.`
+                      : status === "live"
+                        ? "The lobby is live — check the leaderboard for current standings."
+                        : "This lobby has ended — check the leaderboard for final standings."}
                   </p>
                 )}
               </Card>
@@ -875,7 +889,15 @@ export default function LeaderboardLobbyPage() {
                     </div>
                   )
                 ) : !isOpenPhase ? (
-                  <div className="text-center font-mono text-xs text-gold-500">You&apos;re on the list.</div>
+                  <Button
+                    variant="subtle"
+                    size="lg"
+                    full
+                    iconLeft={<BarChart2 size={18} />}
+                    onClick={() => setBoardView(true)}
+                  >
+                    {status === "ended" ? "View final results" : "Open leaderboard"}
+                  </Button>
                 ) : leaveConfirming ? (
                   <div className="flex flex-col gap-2.5">
                     {leaveError ? <p className="m-0 text-center text-xs text-red-500">{leaveError}</p> : null}
@@ -974,12 +996,8 @@ export default function LeaderboardLobbyPage() {
             </div>
 
             {/* Bar 1: lobby + actions */}
+            {!(readOnly && !isAuthor) && (
             <div className="flex flex-col gap-2.5 border-b border-white/8 bg-ink-900 px-4 py-3 sm:px-9">
-              {!isPreviewBoard && readOnly && !isAuthor && (
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-white/40">VIEW ONLY</span>
-                </div>
-              )}
               {!isPreviewBoard && !readOnly && status !== "live" && (
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
                   <Button variant="subtle" size="sm" iconLeft={<WifiOff size={13} />} onClick={() => setConfirmCloseOpen(true)}>
@@ -995,9 +1013,6 @@ export default function LeaderboardLobbyPage() {
                       <Button variant="subtle" size="sm" iconLeft={<UserPlus size={13} />} onClick={addPlayer}>Add player</Button>
                       <Button variant="subtle" size="sm" iconLeft={<Plus size={13} />} onClick={() => patch({ roundCount: Math.max(1, roundCount + 1) }, { save: true })}>Add round</Button>
                       <Button variant="subtle" size="sm" iconLeft={<RotateCcw size={13} />} onClick={reset}>Reset scores</Button>
-                      <Button variant="subtle" size="sm" iconLeft={copied === "edit" ? <Check size={13} /> : <Users size={13} />} onClick={() => copyLink("edit")}>
-                        {copied === "edit" ? "Copied!" : "Copy Collaborator link"}
-                      </Button>
                       <Button variant="subtle" size="sm" iconLeft={copied === "view" ? <Check size={13} /> : <Eye size={13} />} onClick={() => copyLink("view")}>
                         {copied === "view" ? "Copied!" : "Copy Viewer link"}
                       </Button>
@@ -1029,6 +1044,7 @@ export default function LeaderboardLobbyPage() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* Bar 2: settings */}
             {!readOnly && (

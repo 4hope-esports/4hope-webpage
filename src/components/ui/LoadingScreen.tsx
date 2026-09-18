@@ -87,7 +87,7 @@ export function LoadingScreen({
   variant,
   title,
   loadingSeconds = 6,
-  showPercent = true,
+  showPercent = false,
   showTip = true,
   className,
 }: LoadingScreenProps) {
