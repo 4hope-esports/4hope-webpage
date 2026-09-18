@@ -187,7 +187,14 @@ export default function LeaderboardLobbyPage() {
   }, [isAuthor, searchParams, router, lobbyId]);
   // people isn't refetched after a self-service leave, so drop ourselves from
   // the displayed roster optimistically until the next full page load.
-  const displayParticipants = hasLeft ? people.filter((p) => p.userId !== myUserId) : people;
+  const visibleParticipants = hasLeft ? people.filter((p) => p.userId !== myUserId) : people;
+  // Host always leads the list — Array#sort is stable, so everyone else keeps
+  // their existing relative order.
+  const displayParticipants = [...visibleParticipants].sort((a, b) => {
+    const aHost = Boolean(a.userId) && a.userId === meta?.ownerUserId;
+    const bHost = Boolean(b.userId) && b.userId === meta?.ownerUserId;
+    return aHost === bHost ? 0 : aHost ? -1 : 1;
+  });
 
   // Before the host has added any real board rows, show an illustrative demo
   // roster — a pure display fallback, never written to `people` until the
@@ -667,7 +674,7 @@ export default function LeaderboardLobbyPage() {
       {showLoadingScreen ? (
         <LoadingScreen variant={meta?.game === "TFT" ? "TFT" : "Match loading"} title="LOADING LOBBY" showPercent={false} />
       ) : !showingBoard ? (
-        <div className="mx-auto max-w-[900px] px-4 py-6 sm:px-9">
+        <div className={`mx-auto max-w-[900px] px-4 pt-6 sm:px-9 sm:py-6 ${joinOpen ? "pb-6" : "pb-48"}`}>
           <button
             type="button"
             onClick={() => router.push("/lobbies")}
@@ -825,6 +832,13 @@ export default function LeaderboardLobbyPage() {
             </div>
 
             <div className="flex flex-col gap-4">
+              <div
+                className={
+                  joinOpen
+                    ? "flex flex-col gap-3"
+                    : "flex flex-col gap-3 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-30 max-sm:border-t max-sm:border-white/10 max-sm:bg-ink-1000/95 max-sm:p-4 max-sm:backdrop-blur-sm"
+                }
+              >
               <Card tone="arena" className="p-5">
                 {!isAuthor && !isOpenPhase ? (
                   <Button
@@ -922,6 +936,7 @@ export default function LeaderboardLobbyPage() {
                   {starting ? "Starting…" : "Start lobby"}
                 </Button>
               ) : null}
+              </div>
               <Card tone="arena" className="flex flex-col gap-4 p-5">
                 <MetaItem icon={<Globe size={16} />} label="Region" value={meta?.region || "—"} />
                 <MetaItem icon={<Server size={16} />} label="Riot server" value={meta?.riotServer || (meta?.region === "Global" ? "Global" : "—")} />

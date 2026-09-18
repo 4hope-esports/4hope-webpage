@@ -834,13 +834,13 @@ function SettingsTab({
         </div>
       </Card>
 
-      <RiotAccountCard riot={riot} onSaved={onRiotSaved} />
-
       <div className="flex justify-end gap-3">
         <Button variant="primary" disabled={!hasChanges} onClick={() => setConfirmOpen(true)}>
           Save changes
         </Button>
       </div>
+
+      <RiotAccountCard riot={riot} onSaved={onRiotSaved} />
 
       <Dialog
         open={confirmOpen}

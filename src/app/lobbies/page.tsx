@@ -298,24 +298,30 @@ export default function LeaderboardDirectoryPage() {
           <h1 className="font-display text-[30px] font-black uppercase leading-none tracking-[-0.02em] text-white sm:text-[42px]">
             Lobbies
           </h1>
+          <Button variant="primary" size="md" iconLeft={<Plus size={16} />} onClick={openCreate} className="mt-4 w-full sm:hidden">
+            Open a lobby
+          </Button>
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 border-b border-white/8 bg-ink-900">
-        <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-3 px-5 py-4 sm:px-9">
-          <div className="min-w-0 flex-1 basis-full sm:basis-[320px]">
-            <Input
-              placeholder="Search by title, author, region, or status"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              iconLeft={<Search size={16} />}
-              className="w-full"
-            />
-          </div>
+      <div className="sticky top-16 z-10 bg-ink-900">
+        <div className="mx-auto max-w-[1200px] px-5 py-4 sm:px-9">
+          <Input
+            placeholder="Search by title, author, region, or status"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            iconLeft={<Search size={16} />}
+            className="w-full sm:max-w-[420px]"
+          />
+        </div>
+      </div>
+
+      <div className="border-b border-white/8 bg-ink-900">
+        <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-3 px-5 pb-4 sm:px-9">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-white/40">
             {lobbies.length} {lobbies.length === 1 ? "lobby" : "lobbies"}
           </div>
-          <Button variant="primary" size="md" iconLeft={<Plus size={16} />} onClick={openCreate} className="ml-auto">
+          <Button variant="primary" size="md" iconLeft={<Plus size={16} />} onClick={openCreate} className="ml-auto hidden sm:inline-flex">
             Open a lobby
           </Button>
         </div>
@@ -323,11 +329,11 @@ export default function LeaderboardDirectoryPage() {
 
       <div className="relative mx-auto max-w-[1200px] px-5 py-2 pb-12 sm:px-9">
         {loadingInitial ? (
-          <div className="relative z-10 flex items-center gap-2 py-16 justify-center font-mono text-xs text-white/50">
+          <div className="relative z-0 flex items-center gap-2 py-16 justify-center font-mono text-xs text-white/50">
             <Loader2 size={16} className="animate-spin" /> LOADING…
           </div>
         ) : visible.length === 0 ? (
-          <div className="relative z-10 flex flex-col items-center gap-3 py-20 text-center">
+          <div className="relative z-0 flex flex-col items-center gap-3 py-20 text-center">
             <p className="font-mono text-xs uppercase tracking-[0.06em] text-white/40">
               {lobbies.length === 0 ? "No lobbies yet — be the first to open one." : "No lobbies match — try a different search."}
             </p>
@@ -338,7 +344,7 @@ export default function LeaderboardDirectoryPage() {
             ) : null}
           </div>
         ) : (
-          <div className="relative z-10">
+          <div className="relative z-0">
             {visible.map((lobby) => (
               <LobbyListRow key={lobby.id} lobby={lobby} />
             ))}
@@ -497,11 +503,6 @@ function LobbyListRow({ lobby }: { lobby: LobbyRow }) {
           <Tag scheme={STATUS_SCHEME[lobby.status]} variant={lobby.status === "live" ? "solid" : "subtle"} size="sm" className="shrink-0">
             {STATUS_LABEL[lobby.status]}
           </Tag>
-          {lobby.status === "open" && lobby.scheduledStartTime ? (
-            <Tag scheme="brand" size="sm" className="hidden shrink-0 sm:inline-flex">
-              <Clock size={11} /> {formatScheduledTime(lobby.scheduledStartTime)}
-            </Tag>
-          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 font-mono text-[11.5px] text-white/55">
           <span className="flex items-center gap-1.5">
@@ -512,11 +513,10 @@ function LobbyListRow({ lobby }: { lobby: LobbyRow }) {
           <span className="flex items-center gap-1">
             <Users size={13} /> {lobby.participantCount}{lobby.limit ? `/${lobby.limit}` : ""}
           </span>
-          {lobby.status === "open" && lobby.scheduledStartTime ? (
-            <span className="sm:hidden">Starts {formatScheduledTime(lobby.scheduledStartTime)}</span>
-          ) : (
-            <span>Starts {lobby.scheduledStartTime ? formatScheduledTime(lobby.scheduledStartTime) : "TBD"}</span>
-          )}
+          <span className="flex items-center gap-1">
+            {lobby.status === "open" && lobby.scheduledStartTime ? <Clock size={11} className="text-gold-500" /> : null}
+            Starts {lobby.scheduledStartTime ? formatScheduledTime(lobby.scheduledStartTime) : "TBD"}
+          </span>
         </div>
       </div>
       <Button
