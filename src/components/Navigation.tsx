@@ -22,6 +22,7 @@ interface NavigationProps {
 const LINKS: NavLink[] = [
   { label: 'Home', href: '/#home' },
   { label: 'Roster', href: '/#roster' },
+  { label: 'Lobbies', href: '/lobbies' },
 ]
 
 function DiscordIcon() {
@@ -67,9 +68,9 @@ export function Navigation({ discordUrl }: NavigationProps) {
   useEffect(() => {
     if (!onLandingPage) return
 
-    const sections = LINKS.map((l) => document.getElementById(l.href.slice(2))).filter(
-      (el): el is HTMLElement => el !== null,
-    )
+    const sections = LINKS.filter((l) => l.href.startsWith('/#'))
+      .map((l) => document.getElementById(l.href.slice(2)))
+      .filter((el): el is HTMLElement => el !== null)
 
     if (sections.length === 0) return
 
@@ -98,7 +99,8 @@ export function Navigation({ discordUrl }: NavigationProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [profileMenuOpen])
 
-  const isActiveLink = (href: string) => onLandingPage && active === href
+  const isActiveLink = (href: string) =>
+    href.startsWith('/#') ? onLandingPage && active === href : pathname === href || pathname.startsWith(`${href}/`)
   const isHome = onLandingPage && active === '/#home'
 
   const meetTheSquadButton = (

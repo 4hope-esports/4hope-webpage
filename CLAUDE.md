@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-4hope-webpage is a static website for **4Hope** — a competitive gaming / esports organization. The repository is in early setup — no build tooling or framework has been committed yet.
+4hope-webpage is the official website for **4Hope** — a competitive gaming / esports organization (TFT + League). It's a Next.js 16 (App Router) + React 19 + TypeScript app using Tailwind CSS 4, NextAuth (Google sign-in), and Firebase Admin (Firestore) for server-side data, plus the Riot Games API for roster/stat data. See `README.md` for setup.
+
+Player-run lobbies (leaderboard rooms) live under `src/app/lobbies/` (routes were renamed from `tournament/leaderboard/*` to `lobbies/*`).
 
 ## Branch Strategy
 
 - `main` — stable/production
-- `feature/configurations` — project config, tooling, documentation
-- `feature/landing-page` — landing page implementation
+- `dev` — integration branch
+- `feature/*` — in-progress feature work (current: `feature/leaderboard`)
 
 ## Design System
 
