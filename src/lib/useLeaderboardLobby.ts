@@ -12,7 +12,12 @@ export type LobbyStatus = "open" | "live" | "ended";
  */
 export interface LobbyPerson {
   id: string;
-  sessionId: string;
+  /**
+   * The anonymous per-browser write-credential for this row — the server
+   * never echoes it back in a GET response (see sanitizePeopleForResponse),
+   * so it's only ever populated locally on a row this client just created.
+   */
+  sessionId?: string;
   /** NextAuth session.user.id of the participant — joining requires login, so this is always set on new records. */
   userId?: string;
   name: string;

@@ -56,6 +56,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: result.error }, { status: 404 });
   }
 
+  // A verified lookup carries the account's real puuid — refuse to attach it
+  // if it's already linked to a different user, so two accounts can't both
+  // display the same Riot identity/rank.
+  const puuid = result.riot.puuid;
+  if (typeof puuid === "string" && puuid) {
+    const conflict = await getAdminDb().collection(envCollection("users")).where("riot.puuid", "==", puuid).limit(1).get();
+    const takenByOther = conflict.docs.find((d) => d.id !== session.user.id);
+    if (takenByOther) {
+      return NextResponse.json({ error: "This Riot account is already linked to another player." }, { status: 409 });
+    }
+  }
+
   await getAdminDb().collection(envCollection("users")).doc(session.user.id).set({ riot: result.riot }, { merge: true });
 
   return NextResponse.json({ ok: true, riot: riotResponsePayload(result.riot) });

@@ -771,9 +771,9 @@ export default function LeaderboardLobbyPage() {
                       // rows never collect one) — so this naturally excludes the host's
                       // own row and any player the host added directly.
                       const canContactByEmail = isAuthor && !isHostRow && Boolean(p.email);
-                      const emailKey = p.userId || p.sessionId;
+                      const emailKey = p.id;
                       return (
-                        <div key={p.userId || p.sessionId} className="flex items-center gap-2.5">
+                        <div key={p.id} className="flex items-center gap-2.5">
                           <Avatar src={p.photoURL} name={p.name} size="xs" />
                           <div className="min-w-0 flex-1">
                             <span className="block truncate text-sm text-white">{p.name}</span>
