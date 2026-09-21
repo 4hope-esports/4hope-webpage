@@ -57,6 +57,42 @@ function getPeople(existing: Record<string, unknown>): Person[] {
   return Array.isArray(existing.people) ? (existing.people as Person[]) : [];
 }
 
+/**
+ * Strips each person's `sessionId` before a lobby doc goes out over the wire.
+ * It's the anonymous write-credential a browser uses to prove "this board row
+ * is mine" (see the leave action below) — leaking it in a public GET response
+ * would let anyone holding the lobby link read another participant's
+ * credential and act as them. The client already has its own sessionId
+ * locally; `id` is the unique key everything UI-facing needs.
+ */
+function sanitizePeopleForResponse(people: Person[]): Omit<Person, "sessionId">[] {
+  return people.map(({ sessionId: _sessionId, ...rest }) => {
+    void _sessionId;
+    return rest;
+  });
+}
+
+/**
+ * Reconciles a client-submitted `people[]` write against what's already
+ * stored so a bulk board edit (rename/add/remove a row) can never plant a
+ * `userId`/`email` identity claim. Those two fields may only ever be set by
+ * the dedicated join action below, which derives them from the caller's own
+ * verified session — never trust them coming back from a client write, even
+ * from the host's own edit-token session.
+ */
+function reconcilePeopleIdentity(existingPeople: Person[], incoming: Person[]): Person[] {
+  const byId = new Map(existingPeople.map((p) => [p.id, p]));
+  return incoming.map((p) => {
+    const prior = byId.get(p.id);
+    const next: Person = { ...p };
+    if (prior?.userId) next.userId = prior.userId;
+    else delete next.userId;
+    if (prior?.email) next.email = prior.email;
+    else delete next.email;
+    return next;
+  });
+}
+
 /** Fully removes a person (leave / reject) — drops their board row, order entry, and scores. */
 function removePerson(existing: Record<string, unknown>, people: Person[], personId: string): Record<string, unknown> {
   const update: Record<string, unknown> = { people: people.filter((p) => p.id !== personId) };
@@ -114,7 +150,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ lobb
   const { editToken: _editToken, editorSessionIds: _editorSessionIds, ...rest } = data;
   void _editToken;
   void _editorSessionIds;
-  const publicData: Record<string, unknown> = { ...rest, people: getPeople(data) };
+  const publicData: Record<string, unknown> = { ...rest, people: sanitizePeopleForResponse(getPeople(data)) };
 
   // Open-state visibility: non-authors see the roster (`people`) only, not
   // the score table, until the author starts the lobby (status -> "live").
@@ -166,6 +202,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ lobb
     if (!isValidGuid(b.editToken)) {
       return NextResponse.json({ error: "missing or invalid editToken" }, { status: 400 });
     }
+    // Ownership is never taken from the client — hosting a lobby requires a
+    // real session, and the owner is always *this* session's user id, never
+    // whatever `meta.ownerUserId` the request body claims.
+    const session = await auth();
+    const ownerUserId = session?.user?.id;
+    if (!ownerUserId) {
+      return NextResponse.json({ error: "login required to create a lobby" }, { status: 401 });
+    }
     const meta = validateLobbyMeta(b.meta);
     if (typeof meta === "string") return NextResponse.json({ error: meta }, { status: 400 });
     const stateError = validateLobbyState(b.state);
@@ -173,7 +217,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ lobb
 
     const ownedSnap = await getAdminDb()
       .collection(envCollection("lobbies"))
-      .where("ownerUserId", "==", meta.ownerUserId)
+      .where("ownerUserId", "==", ownerUserId)
       .get();
     const activeCount = ownedSnap.docs.filter((d) => d.data().status !== "ended").length;
     if (activeCount >= MAX_ACTIVE_LOBBIES_PER_OWNER) {
@@ -196,11 +240,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ lobb
     if (b.people !== undefined) {
       const peopleError = validatePeople(b.people);
       if (peopleError) return NextResponse.json({ error: peopleError }, { status: 400 });
-      people = b.people as Person[];
+      // Nothing has "really" joined yet at creation time — no incoming row
+      // may claim an existing identity (see reconcilePeopleIdentity).
+      people = reconcilePeopleIdentity(people, b.people as Person[]);
     }
 
     await ref.set({
       ...meta,
+      ownerUserId,
       visibility: "public",
       status: "open",
       authorSessionId: sessionId,
@@ -259,7 +306,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ lobb
     if (b.people !== undefined) {
       const peopleError = validatePeople(b.people);
       if (peopleError) return NextResponse.json({ error: peopleError }, { status: 400 });
-      update.people = b.people;
+      update.people = reconcilePeopleIdentity(getPeople(existing), b.people as Person[]);
     }
 
     const editorSessionIds = Array.isArray(existing.editorSessionIds) ? (existing.editorSessionIds as string[]) : [];
@@ -482,7 +529,6 @@ function validateLobbyMeta(body: unknown): Record<string, unknown> | string {
       return "invalid scheduled start time";
     }
   }
-  if (typeof b.ownerUserId !== "string" || !b.ownerUserId.trim()) return "missing or invalid ownerUserId";
   if (b.game !== undefined && !GAMES.includes(b.game as (typeof GAMES)[number])) return "invalid game";
   if (b.riotServer !== undefined && b.riotServer !== null && !RIOT_SERVER_VALUES.includes(b.riotServer as string)) {
     return "invalid riotServer";
@@ -504,7 +550,6 @@ function validateLobbyMeta(body: unknown): Record<string, unknown> | string {
     authorName: b.authorName.trim(),
     authorPhotoURL: b.authorPhotoURL ?? null,
     scheduledStartTime: b.scheduledStartTime ?? null,
-    ownerUserId: b.ownerUserId.trim(),
     game: b.game ?? "TFT",
     riotServer: b.riotServer ?? null,
     limit: b.limit ?? MAX_PARTICIPANTS,
