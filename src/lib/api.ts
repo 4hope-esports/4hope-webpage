@@ -1,7 +1,7 @@
 /** Sends a JSON request and returns the parsed body, throwing `data.error` (or a fallback message) on a non-OK response. */
 export async function requestJson<T = unknown>(
   url: string,
-  options: { method?: 'POST' | 'PATCH'; body?: unknown; fallbackError?: string } = {},
+  options: { method?: 'POST' | 'PATCH' | 'DELETE'; body?: unknown; fallbackError?: string } = {},
 ): Promise<T> {
   const { method = 'POST', body, fallbackError = 'Request failed' } = options
   const res = await fetch(url, {

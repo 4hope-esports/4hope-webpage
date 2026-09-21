@@ -18,6 +18,19 @@ async function compressDataUrlImage(dataUrl: string, dimension: number, quality:
   return compressImageBuffer(Buffer.from(match[1], "base64"), dimension, quality);
 }
 
+/** Downloads an image from a URL and compresses it into a small square WebP buffer. */
+export async function fetchAndCompressImage(url: string, dimension: number, quality = 80): Promise<Buffer | null> {
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    const arrayBuffer = await res.arrayBuffer();
+    return await compressImageBuffer(Buffer.from(arrayBuffer), dimension, quality);
+  } catch (error) {
+    console.error("Failed to fetch/compress image", error);
+    return null;
+  }
+}
+
 /**
  * Decodes a Firestore-stored avatar into a displayable src. `photo.currentBytes` holds the
  * user's custom upload, if any; with no custom upload this returns null and callers fall back
@@ -64,4 +77,20 @@ export async function compressTeamLogo(dataUrl: string): Promise<Buffer | null> 
     console.error("Failed to compress team logo", error);
     return null;
   }
+}
+
+/** Decodes a Firestore-stored Riot profile icon (compressed Buffer) into a displayable src. */
+export function resolveRiotIconSrc(profile: FirebaseFirestore.DocumentData): string | null {
+  if (Buffer.isBuffer(profile.riot?.iconBytes)) {
+    return `data:${AVATAR_CONTENT_TYPE};base64,${profile.riot.iconBytes.toString("base64")}`;
+  }
+  return null;
+}
+
+/** Decodes a Firestore-stored TFT Little Legend (companion) icon into a displayable src. */
+export function resolveCompanionIconSrc(profile: FirebaseFirestore.DocumentData): string | null {
+  if (Buffer.isBuffer(profile.riot?.companionBytes)) {
+    return `data:${AVATAR_CONTENT_TYPE};base64,${profile.riot.companionBytes.toString("base64")}`;
+  }
+  return null;
 }

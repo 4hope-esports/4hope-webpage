@@ -54,6 +54,7 @@ export async function POST(request: Request) {
   }
 
   const docRef = usersCol.doc(session.user.id);
+  const existing = await docRef.get();
 
   const customBytes = typeof photoDataUrl === "string" && photoDataUrl ? await compressAvatarDataUrl(photoDataUrl) : null;
 
@@ -68,6 +69,9 @@ export async function POST(request: Request) {
         ...(customBytes ? { bytes: customBytes, currentBytes: customBytes } : {}),
       },
       createdAt: new Date().toISOString(),
+      // New accounts start on the free "basic" plan. Guarded so re-submitting this
+      // form never downgrades an account that's since been upgraded to a paid plan.
+      ...(existing.data()?.plan ? {} : { plan: "basic" }),
     },
     { merge: true },
   );
