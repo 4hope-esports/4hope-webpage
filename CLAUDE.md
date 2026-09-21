@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-4hope-webpage is a static website for **4Hope** — a competitive gaming / esports organization. The repository is in early setup — no build tooling or framework has been committed yet.
+4hope-webpage is the official website for **4Hope** — a competitive gaming / esports organization (TFT + League). It's a Next.js 16 (App Router) + React 19 + TypeScript app using Tailwind CSS 4, NextAuth (Google sign-in), and Firebase Admin (Firestore) for server-side data, plus the Riot Games API for roster/stat data. See `README.md` for setup.
+
+Player-run lobbies (leaderboard rooms) live under `src/app/lobbies/` (routes were renamed from `tournament/leaderboard/*` to `lobbies/*`).
 
 ## Branch Strategy
 
 - `main` — stable/production
-- `feature/configurations` — project config, tooling, documentation
-- `feature/landing-page` — landing page implementation
+- `dev` — integration branch
+- `feature/*` — in-progress feature work (current: `feature/leaderboard`)
 
 ## Design System
 
@@ -74,3 +76,13 @@ Athletic, scrappy, underdog-with-swagger. The "hope" + four-leaf-clover play on 
 
 - `assets/brand/logo.png` — stacked 4HO/PE wordmark with clover (use on ink)
 - `assets/brand/banner.jpeg` — gold diagonal bars on black
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
