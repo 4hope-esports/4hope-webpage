@@ -165,6 +165,12 @@ export function useLeaderboardLobby(
   const [closed, setClosed] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const closedRef = useRef(false);
+  // Counts writes that have been fired but not yet confirmed by the server —
+  // flushWrite is fire-and-forget, so a caller clearing its own "dirty" flag
+  // the instant it calls flushWrite doesn't mean the edit has landed yet. A
+  // refetch racing that window would overwrite the still-in-flight edit with
+  // stale server data, so refetch callers check hasPendingWrite() too.
+  const pendingWritesRef = useRef(0);
 
   const markClosed = () => {
     closedRef.current = true;
@@ -174,7 +180,21 @@ export function useLeaderboardLobby(
 
   const applyData = (data: LobbyData) => {
     setState((s) => pickState(s, data));
-    setPeople(data?.people ?? []);
+    // The server never echoes a row's sessionId back over GET (see
+    // sanitizePeopleForResponse) — it's a write-credential only the browser
+    // that created the row should hold on to. Restore it here from whatever
+    // this client already had locally for that row, or a later board write
+    // (add player / add round / flush) would submit that row with neither a
+    // sessionId nor (for a host-added, non-participant row) a userId, which
+    // the server rejects outright.
+    setPeople((prevPeople) => {
+      const incoming = data?.people ?? [];
+      const priorById = new Map(prevPeople.map((p) => [p.id, p]));
+      return incoming.map((p) => {
+        const prior = priorById.get(p.id);
+        return prior?.sessionId && !p.sessionId ? { ...p, sessionId: prior.sessionId } : p;
+      });
+    });
     setMeta({
       name: data?.name ?? "",
       region: data?.region ?? "",
@@ -250,8 +270,11 @@ export function useLeaderboardLobby(
    * sent together — same last-write-wins semantics the single `state` write
    * always had.
    */
-  const flushWrite = (overrideState?: LeaderboardLobbyState, overridePeople?: LobbyPerson[]) => {
-    if (!lobbyId || !loaded || !canEdit || closed || closedRef.current) return;
+  const flushWrite = (overrideState?: LeaderboardLobbyState, overridePeople?: LobbyPerson[]): Promise<boolean> => {
+    // Not a failure — there's nothing to save (not yet loaded, read-only viewer,
+    // or the lobby closed) — resolve truthy so a caller tracking confirmation
+    // doesn't get stuck waiting on a write that was never going to happen.
+    if (!lobbyId || !loaded || !canEdit || closed || closedRef.current) return Promise.resolve(true);
     const s = overrideState ?? state;
     const p = overridePeople ?? people;
     // Before the lobby starts, the board is just a preview — round scores
@@ -261,17 +284,28 @@ export function useLeaderboardLobby(
     void _scores;
     const outgoingState = status === "open" ? rest : s;
     const body = JSON.stringify({ state: outgoingState, people: p, sessionId: getSessionId(), editToken });
-    fetch(`/api/lobby/${lobbyId}`, {
+    pendingWritesRef.current += 1;
+    return fetch(`/api/lobby/${lobbyId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body,
-    }).catch(() => {});
+    })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
+      });
   };
+
+  const hasPendingWrite = () => pendingWritesRef.current > 0;
 
   /** Re-fetches the lobby doc and applies it — used after a join/leave, which the server
    *  sees but this client otherwise has no way to learn about without polling. */
   const refetch = async () => {
     if (!lobbyId) return;
+    // Skip while a write we just fired hasn't been confirmed yet — a GET
+    // racing ahead of it would apply stale data and clobber the pending edit.
+    if (hasPendingWrite()) return;
     const { data, isEditor } = await fetchLobby(lobbyId, editToken);
     if (!data) return;
     applyData(data);
@@ -309,7 +343,7 @@ export function useLeaderboardLobby(
     return { ok: false, error: json?.error ?? null };
   };
 
-  return { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, markClosed, setLobbyStatus, updateMeta, refetch, flushWrite };
+  return { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, markClosed, setLobbyStatus, updateMeta, refetch, flushWrite, hasPendingWrite };
 }
 
 export async function createLobby(

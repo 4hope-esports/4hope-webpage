@@ -96,7 +96,7 @@ export default function LeaderboardLobbyPage() {
   const [leavingInFlight, setLeavingInFlight] = React.useState(false);
   const [leaveError, setLeaveError] = React.useState<string | null>(null);
 
-  const { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, setLobbyStatus, updateMeta, refetch, flushWrite } = useLeaderboardLobby(
+  const { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, setLobbyStatus, updateMeta, refetch, flushWrite, hasPendingWrite } = useLeaderboardLobby(
     lobbyId, editToken, React.useMemo(defaultLobbyState, []),
   );
   const {
@@ -143,12 +143,27 @@ export default function LeaderboardLobbyPage() {
   // name/region cell, it silently reverts what they just typed. Pausing the
   // refresh while dirty avoids that; it resumes once the field blurs and flushes.
   const dirtyRef = React.useRef(false);
+  // Counts edits that have been handed to flushWrite but not yet confirmed
+  // saved. dirtyRef only clears once this hits zero, so a refresh can't land
+  // between "save fired" and "save landed" and clobber it — and a failed
+  // write leaves dirtyRef stuck dirty (never silently drops the edit) since
+  // the count is only decremented on success, not on completion.
+  const unconfirmedRef = React.useRef(0);
+  const trackWrite = (writePromise: Promise<boolean>) => {
+    unconfirmedRef.current += 1;
+    dirtyRef.current = true;
+    writePromise.then((ok) => {
+      if (ok) {
+        unconfirmedRef.current = Math.max(0, unconfirmedRef.current - 1);
+        if (unconfirmedRef.current === 0) dirtyRef.current = false;
+      }
+    });
+  };
   const patch = (partial: Partial<LeaderboardLobbyState>, opts?: { save?: boolean }) => {
     const next = { ...state, ...partial };
     setState(next);
     if (opts?.save) {
-      flushWrite(next);
-      dirtyRef.current = false;
+      trackWrite(flushWrite(next));
     } else {
       dirtyRef.current = true;
     }
@@ -156,15 +171,13 @@ export default function LeaderboardLobbyPage() {
   const patchPeople = (next: LobbyPerson[], opts?: { save?: boolean }) => {
     setPeople(next);
     if (opts?.save) {
-      flushWrite(undefined, next);
-      dirtyRef.current = false;
+      trackWrite(flushWrite(undefined, next));
     } else {
       dirtyRef.current = true;
     }
   };
   const commitField = () => {
-    flushWrite();
-    dirtyRef.current = false;
+    trackWrite(flushWrite());
   };
 
   const sessionId = React.useMemo(() => getSessionId(), []);
@@ -219,10 +232,11 @@ export default function LeaderboardLobbyPage() {
 
   const addPlayer = () => {
     const rawId = crypto.randomUUID();
+    const boardCount = people.filter((p) => p.isPlayer).length;
     const newPerson: LobbyPerson = {
       id: "p" + rawId,
       sessionId: rawId,
-      name: "NEW PLAYER",
+      name: `PLAYER ${boardCount + 1}`,
       region: "",
       approvalStatus: "approved",
       isPlayer: true,
@@ -451,14 +465,16 @@ export default function LeaderboardLobbyPage() {
   const [manualRefreshing, setManualRefreshing] = React.useState(false);
   const refetchRef = React.useRef(refetch);
   const autoRefreshActiveRef = React.useRef(showingBoard);
+  const hasPendingWriteRef = React.useRef(hasPendingWrite);
   React.useEffect(() => {
     refetchRef.current = refetch;
     autoRefreshActiveRef.current = showingBoard;
+    hasPendingWriteRef.current = hasPendingWrite;
   });
 
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (!autoRefreshActiveRef.current || dirtyRef.current) return;
+      if (!autoRefreshActiveRef.current || dirtyRef.current || hasPendingWriteRef.current()) return;
       setRefreshCountdown((s) => {
         if (s <= 1) {
           refetchRef.current();
@@ -483,6 +499,13 @@ export default function LeaderboardLobbyPage() {
   }, [showingBoard]);
 
   const manualRefresh = async () => {
+    // A dirty/unflushed edit (or a write still in flight) means the server
+    // doesn't yet reflect the latest local change — refetching now would
+    // clobber it. Just reset the countdown and let the next click try again.
+    if (dirtyRef.current || hasPendingWrite()) {
+      setRefreshCountdown(REFRESH_INTERVAL_S);
+      return;
+    }
     setManualRefreshing(true);
     await refetch();
     setRefreshCountdown(REFRESH_INTERVAL_S);
@@ -840,7 +863,7 @@ export default function LeaderboardLobbyPage() {
                 }
               >
               <Card tone="arena" className="p-5">
-                {!isAuthor && !isOpenPhase ? (
+                {!isOpenPhase && (!(joined || alreadyParticipant) || hasLeft) ? (
                   <Button
                     variant={status === "live" ? "primary" : "subtle"}
                     size="lg"
