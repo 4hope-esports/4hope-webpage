@@ -96,7 +96,7 @@ export default function LeaderboardLobbyPage() {
   const [leavingInFlight, setLeavingInFlight] = React.useState(false);
   const [leaveError, setLeaveError] = React.useState<string | null>(null);
 
-  const { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, setLobbyStatus, updateMeta, refetch, flushWrite } = useLeaderboardLobby(
+  const { state, setState, people, setPeople, meta, status, loaded, closed, canEdit, setLobbyStatus, updateMeta, refetch, flushWrite, hasPendingWrite } = useLeaderboardLobby(
     lobbyId, editToken, React.useMemo(defaultLobbyState, []),
   );
   const {
@@ -143,12 +143,27 @@ export default function LeaderboardLobbyPage() {
   // name/region cell, it silently reverts what they just typed. Pausing the
   // refresh while dirty avoids that; it resumes once the field blurs and flushes.
   const dirtyRef = React.useRef(false);
+  // Counts edits that have been handed to flushWrite but not yet confirmed
+  // saved. dirtyRef only clears once this hits zero, so a refresh can't land
+  // between "save fired" and "save landed" and clobber it — and a failed
+  // write leaves dirtyRef stuck dirty (never silently drops the edit) since
+  // the count is only decremented on success, not on completion.
+  const unconfirmedRef = React.useRef(0);
+  const trackWrite = (writePromise: Promise<boolean>) => {
+    unconfirmedRef.current += 1;
+    dirtyRef.current = true;
+    writePromise.then((ok) => {
+      if (ok) {
+        unconfirmedRef.current = Math.max(0, unconfirmedRef.current - 1);
+        if (unconfirmedRef.current === 0) dirtyRef.current = false;
+      }
+    });
+  };
   const patch = (partial: Partial<LeaderboardLobbyState>, opts?: { save?: boolean }) => {
     const next = { ...state, ...partial };
     setState(next);
     if (opts?.save) {
-      flushWrite(next);
-      dirtyRef.current = false;
+      trackWrite(flushWrite(next));
     } else {
       dirtyRef.current = true;
     }
@@ -156,15 +171,13 @@ export default function LeaderboardLobbyPage() {
   const patchPeople = (next: LobbyPerson[], opts?: { save?: boolean }) => {
     setPeople(next);
     if (opts?.save) {
-      flushWrite(undefined, next);
-      dirtyRef.current = false;
+      trackWrite(flushWrite(undefined, next));
     } else {
       dirtyRef.current = true;
     }
   };
   const commitField = () => {
-    flushWrite();
-    dirtyRef.current = false;
+    trackWrite(flushWrite());
   };
 
   const sessionId = React.useMemo(() => getSessionId(), []);
@@ -219,10 +232,11 @@ export default function LeaderboardLobbyPage() {
 
   const addPlayer = () => {
     const rawId = crypto.randomUUID();
+    const boardCount = people.filter((p) => p.isPlayer).length;
     const newPerson: LobbyPerson = {
       id: "p" + rawId,
       sessionId: rawId,
-      name: "NEW PLAYER",
+      name: `PLAYER ${boardCount + 1}`,
       region: "",
       approvalStatus: "approved",
       isPlayer: true,
@@ -441,28 +455,38 @@ export default function LeaderboardLobbyPage() {
   const [showScoreboard, setShowScoreboard] = React.useState(() => searchParams.get("view") === "board");
   const showingBoard = showScoreboard;
 
-  // No live sync — someone else's score edit only shows up here on a
+  // No push/listener — someone else's score edit only shows up here on a
   // re-fetch. The lobby-info screen (participants, host review) is always
-  // manual-refresh-only. The board auto-refreshes for everyone while it's
-  // open, but only the host sees the countdown/button — a read-only viewer
-  // gets the same silent background polling with no visible control.
-  const REFRESH_INTERVAL_S = 60;
+  // manual-refresh-only. The board polls while it's open; the host (who has
+  // their own "Refresh" button and is usually the one making edits, not
+  // waiting on them) stays on the slower 60s cadence with a visible
+  // countdown, while a read-only viewer polls much more often in the
+  // background — with no visible control — since watching for someone
+  // else's update is their only way to see the board move.
+  const REFRESH_INTERVAL_S = readOnly ? 8 : 60;
   const [refreshCountdown, setRefreshCountdown] = React.useState(REFRESH_INTERVAL_S);
   const [manualRefreshing, setManualRefreshing] = React.useState(false);
   const refetchRef = React.useRef(refetch);
   const autoRefreshActiveRef = React.useRef(showingBoard);
+  const hasPendingWriteRef = React.useRef(hasPendingWrite);
+  // readOnly flips once (from its initial true, before canEdit resolves) to
+  // its real value, which changes which of the two cadences above applies —
+  // so this can't be a plain const captured once by the interval's closure.
+  const refreshIntervalSRef = React.useRef(REFRESH_INTERVAL_S);
   React.useEffect(() => {
     refetchRef.current = refetch;
     autoRefreshActiveRef.current = showingBoard;
+    hasPendingWriteRef.current = hasPendingWrite;
+    refreshIntervalSRef.current = REFRESH_INTERVAL_S;
   });
 
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (!autoRefreshActiveRef.current || dirtyRef.current) return;
+      if (!autoRefreshActiveRef.current || dirtyRef.current || hasPendingWriteRef.current()) return;
       setRefreshCountdown((s) => {
         if (s <= 1) {
           refetchRef.current();
-          return REFRESH_INTERVAL_S;
+          return refreshIntervalSRef.current;
         }
         return s - 1;
       });
@@ -477,12 +501,19 @@ export default function LeaderboardLobbyPage() {
   React.useEffect(() => {
     if (showingBoard && !enteredBoardRef.current) {
       refetchRef.current();
-      setRefreshCountdown(REFRESH_INTERVAL_S);
+      setRefreshCountdown(refreshIntervalSRef.current);
     }
     enteredBoardRef.current = showingBoard;
   }, [showingBoard]);
 
   const manualRefresh = async () => {
+    // A dirty/unflushed edit (or a write still in flight) means the server
+    // doesn't yet reflect the latest local change — refetching now would
+    // clobber it. Just reset the countdown and let the next click try again.
+    if (dirtyRef.current || hasPendingWrite()) {
+      setRefreshCountdown(REFRESH_INTERVAL_S);
+      return;
+    }
     setManualRefreshing(true);
     await refetch();
     setRefreshCountdown(REFRESH_INTERVAL_S);
@@ -840,7 +871,7 @@ export default function LeaderboardLobbyPage() {
                 }
               >
               <Card tone="arena" className="p-5">
-                {!isAuthor && !isOpenPhase ? (
+                {!isOpenPhase && (!(joined || alreadyParticipant) || hasLeft) ? (
                   <Button
                     variant={status === "live" ? "primary" : "subtle"}
                     size="lg"
