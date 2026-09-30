@@ -71,6 +71,7 @@ export default function LeaderboardLobbyPage() {
   const [copied, setCopied] = React.useState<"edit" | "view" | null>(null);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
   const [closing, setClosing] = React.useState(false);
+  const [confirmResetOpen, setConfirmResetOpen] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
   const [nameFilter, setNameFilter] = React.useState("");
   const [regionFilter, setRegionFilter] = React.useState("");
@@ -243,7 +244,10 @@ export default function LeaderboardLobbyPage() {
     };
     patchPeople([...people, newPerson], { save: true });
   };
-  const reset = () => patch({ scores: {} }, { save: true });
+  const reset = () => {
+    patch({ scores: {} }, { save: true });
+    setConfirmResetOpen(false);
+  };
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const editLink = editToken ? `${origin}/lobbies/${lobbyId}?token=${editToken}` : "";
@@ -563,6 +567,28 @@ export default function LeaderboardLobbyPage() {
           </Button>
         </div>
       </div>
+    </Dialog>
+  );
+
+  const confirmResetModal = (
+    <Dialog
+      open={confirmResetOpen}
+      title="Reset all scores?"
+      onClose={() => setConfirmResetOpen(false)}
+      actions={
+        <>
+          <Button variant="subtle" onClick={() => setConfirmResetOpen(false)} className="flex-1 justify-center">
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={reset} className="flex-1 justify-center">
+            Reset scores
+          </Button>
+        </>
+      }
+    >
+      <p className="m-0 font-mono text-xs leading-relaxed text-white/50">
+        This clears every round score on the board for everyone. There&apos;s no undo — you&apos;ll have to re-enter them from scratch.
+      </p>
     </Dialog>
   );
 
@@ -1058,7 +1084,7 @@ export default function LeaderboardLobbyPage() {
                     <>
                       <Button variant="subtle" size="sm" iconLeft={<UserPlus size={13} />} onClick={addPlayer}>Add player</Button>
                       <Button variant="subtle" size="sm" iconLeft={<Plus size={13} />} onClick={() => patch({ roundCount: Math.max(1, roundCount + 1) }, { save: true })}>Add round</Button>
-                      <Button variant="subtle" size="sm" iconLeft={<RotateCcw size={13} />} onClick={reset}>Reset scores</Button>
+                      <Button variant="subtle" size="sm" iconLeft={<RotateCcw size={13} />} onClick={() => setConfirmResetOpen(true)}>Reset scores</Button>
                       <Button variant="subtle" size="sm" iconLeft={copied === "view" ? <Check size={13} /> : <Eye size={13} />} onClick={() => copyLink("view")}>
                         {copied === "view" ? "Copied!" : "Copy Viewer link"}
                       </Button>
@@ -1198,6 +1224,7 @@ export default function LeaderboardLobbyPage() {
           </div>
         )}
       {confirmCloseModal}
+      {confirmResetModal}
       {hostSettingsModal}
     </div>
   );
