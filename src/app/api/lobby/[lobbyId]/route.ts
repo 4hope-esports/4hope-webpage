@@ -89,6 +89,13 @@ function reconcilePeopleIdentity(existingPeople: Person[], incoming: Person[]): 
     else delete next.userId;
     if (prior?.email) next.email = prior.email;
     else delete next.email;
+    // sessionId is never echoed back to a client that doesn't own the row
+    // (see sanitizePeopleForResponse), so a bulk board write from someone
+    // else (e.g. the host adding a player) always submits this row without
+    // one. Restore it from what's already stored instead of erasing a real
+    // participant's own write-credential just because the host's copy never
+    // had it.
+    if (!next.sessionId && prior?.sessionId) next.sessionId = prior.sessionId;
     return next;
   });
 }
@@ -609,10 +616,20 @@ function validatePeople(value: unknown): string | null {
     if (typeof person.id !== "string" || !person.id || person.id.length > 80) return "invalid person id";
     if (seenIds.has(person.id)) return "duplicate person id";
     seenIds.add(person.id);
-    if (typeof person.sessionId !== "string" || !person.sessionId) return "invalid person sessionId";
+    // Neither sessionId nor userId is required on every row: sessionId is a
+    // one-off, browser-local write-credential (see sanitizePeopleForResponse)
+    // that a host-added board row never needs — the host is already
+    // authorized to write the whole board via editToken/ownerUserId above,
+    // not per-row identity. sessionId only matters for the self-service
+    // "leave lobby" match (see isMe below), which is unaffected either way.
+    if (person.sessionId !== undefined && (typeof person.sessionId !== "string" || !person.sessionId)) {
+      return "invalid person sessionId";
+    }
+    if (person.userId !== undefined && (typeof person.userId !== "string" || !person.userId)) {
+      return "invalid person userId";
+    }
     if (typeof person.name !== "string" || !person.name.trim() || person.name.length > 60) return "invalid person name";
     if (typeof person.isPlayer !== "boolean") return "invalid person isPlayer";
-    if (person.userId !== undefined && typeof person.userId !== "string") return "invalid person userId";
     if (person.email !== undefined && typeof person.email !== "string") return "invalid person email";
     if (person.photoURL !== undefined && person.photoURL !== null && typeof person.photoURL !== "string") return "invalid person photoURL";
     if (person.gameName !== undefined && (typeof person.gameName !== "string" || person.gameName.length > 40)) return "invalid person gameName";

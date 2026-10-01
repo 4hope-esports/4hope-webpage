@@ -56,16 +56,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: result.error }, { status: 404 });
   }
 
-  // A verified lookup carries the account's real puuid — refuse to attach it
-  // if it's already linked to a different user, so two accounts can't both
-  // display the same Riot identity/rank.
-  const puuid = result.riot.puuid;
-  if (typeof puuid === "string" && puuid) {
-    const conflict = await getAdminDb().collection(envCollection("users")).where("riot.puuid", "==", puuid).limit(1).get();
-    const takenByOther = conflict.docs.find((d) => d.id !== session.user.id);
-    if (takenByOther) {
-      return NextResponse.json({ error: "This Riot account is already linked to another player." }, { status: 409 });
-    }
+  // Dedup on the Riot ID (name#tag) + server combo rather than puuid: puuid only
+  // comes back from a verified lookup, and with a dev (not production) API key
+  // that lookup can fail or get rate-limited, which would silently let the same
+  // account get linked twice.
+  const nameLower = gameName.trim().toLowerCase();
+  const tagLower = tagLine.trim().toLowerCase();
+  const sameServer = await getAdminDb().collection(envCollection("users")).where("riot.server", "==", server).get();
+  const takenByOther = sameServer.docs.find((d) => {
+    if (d.id === session.user.id) return false;
+    const riot = d.data()?.riot;
+    return riot?.gameName?.toLowerCase?.() === nameLower && riot?.tagLine?.toLowerCase?.() === tagLower;
+  });
+  if (takenByOther) {
+    return NextResponse.json({ error: "This Riot account is already linked to another player." }, { status: 409 });
   }
 
   await getAdminDb().collection(envCollection("users")).doc(session.user.id).set({ riot: result.riot }, { merge: true });
