@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
+import { AuthProvider } from '@/components/AuthProvider'
+import { ToastProvider } from '@/components/ui/ToastProvider'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -41,7 +43,9 @@ export default function RootLayout({
         <meta name="theme-color" content="#0c0c0d" />
       </head>
       <body>
-        {children}
+        <AuthProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </AuthProvider>
         <Analytics />
         <SpeedInsights />
       </body>

@@ -2,6 +2,7 @@
 
 @theme {
   --color-ink-1000: #0C0C0D;
+  --color-ink-900: #141416;
   --color-ink-800: #1c1c1f;
   --color-ink-700: #26262a;
   --color-gold-500: #F2C200;
@@ -9,8 +10,35 @@
   --font-display: "Archivo", system-ui, sans-serif;
   --font-body: "Inter", system-ui, sans-serif;
   --font-mono: "Roboto Mono", monospace;
+  --font-brand: "TT Bluescreens Trial", "Archivo", system-ui, sans-serif;
+}
+
+@keyframes dialog-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(7px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(3px); }
+}
+
+@font-face {
+  font-family: "TT Bluescreens Trial";
+  src: url("/fonts/TT_Bluescreens_Trial_Bold_Italic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
 }
 
 body {
   @apply bg-ink-1000 text-white font-body min-h-screen;
+}
+
+:root {
+  --ink-950: #08080a;
+  --ink-900: #111114;
+  --ink-700: #26262a;
+  --ink-1000: #0c0c0d;
+  --gold-500: #f2c200;
+  --family-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "Roboto Mono", monospace;
 }

@@ -146,3 +146,6 @@ vite.config.ts.timestamp-*
 evidences/
 
 .claude
+
+# macOS
+.DS_Store
